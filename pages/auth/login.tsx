@@ -17,6 +17,11 @@ import { useAuth } from "../../lib/auth-context";
  *
  *   POST /auth/mfa/challenge → { challengeToken, expiresAt, codePreview? }
  *   POST /auth/mfa/verify   → { verified: true }  (no new session issued)
+ *
+ * UX notes:
+ *   - Error is NOT cleared on re-submit. It persists until the user types again.
+ *   - On failure, the card shakes (CSS keyframe, driven by shakeKey remount).
+ *   - shakeKey increments on every failure so the animation always re-triggers.
  */
 
 type Step = "credentials" | "mfa";
@@ -36,10 +41,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [mfaChallengeReady, setMfaChallengeReady] = useState(false);
 
+  // Incrementing this key forces a remount of the card div,
+  // which re-triggers the CSS shake animation on every failure.
+  const [shakeKey, setShakeKey] = useState(0);
+
+  // ─── Credential step ────────────────────────────────────────────────────────
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
-    setErrorCode(null);
+    // ⚠️  Do NOT clear the error here — keep it visible while the new
+    // request is in-flight so the user doesn't lose context.
     setLoading(true);
 
     try {
@@ -54,12 +65,15 @@ export default function LoginPage() {
           setChallengeToken(challenge.challengeToken);
           setCodePreview(challenge.codePreview); // only present in dev
           setMfaChallengeReady(true);
+          setError(""); // clear on successful step transition
+          setErrorCode(null);
           setStep("mfa");
         } catch (mfaErr) {
-          setError(
-            "Your password was accepted, but we could not start the MFA challenge. Please try again in a moment."
-          );
+          const msg =
+            "Your password was accepted, but we could not start the MFA challenge. Please try again in a moment.";
+          setError(msg);
           setErrorCode(extractApiError(mfaErr).statusCode ?? null);
+          setShakeKey((k) => k + 1);
         }
         return;
       }
@@ -72,16 +86,19 @@ export default function LoginPage() {
       if (!msg) msg = "An unexpected error occurred. Please try again.";
       setError(msg);
       setErrorCode(apiError.statusCode ?? null);
+      setShakeKey((k) => k + 1); // triggers shake re-animation
     } finally {
       setLoading(false);
     }
   }
 
+  // ─── MFA step ───────────────────────────────────────────────────────────────
+
   async function handleMfa(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
-    setErrorCode(null);
+    // Same rule: don't wipe the error on re-submit, let it stay visible.
     setLoading(true);
+
     try {
       await authApi.mfaVerify(email, challengeToken, mfaCode);
       // mfaVerify returns { verified: true } — session was already stored by login().
@@ -96,16 +113,71 @@ export default function LoginPage() {
       if (!msg) msg = "An unexpected error occurred. Please try again.";
       setError(msg);
       setErrorCode(apiError.statusCode ?? null);
+      setShakeKey((k) => k + 1); // triggers shake re-animation
     } finally {
       setLoading(false);
     }
-  } // ✅ Only one closing brace for handleMfa
+  }
+
+  // ─── Helpers ────────────────────────────────────────────────────────────────
+
+  function handleEmailChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setEmail(e.target.value);
+    // Clear the error as soon as the user starts correcting input —
+    // this is when they've acknowledged it and are acting on it.
+    if (error) {
+      setError("");
+      setErrorCode(null);
+    }
+  }
+
+  function handlePasswordChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setPassword(e.target.value);
+    if (error) {
+      setError("");
+      setErrorCode(null);
+    }
+  }
+
+  function handleMfaCodeChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+    if (error) {
+      setError("");
+      setErrorCode(null);
+    }
+  }
+
+  function handleBackToCredentials() {
+    setStep("credentials");
+    setError("");
+    setErrorCode(null);
+    setMfaCode("");
+    setChallengeToken("");
+    setCodePreview(undefined);
+    setMfaChallengeReady(false);
+  }
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center px-4">
       <Head>
         <title>Login | KeelStack Demo</title>
+        <style>{`
+          @keyframes shake {
+            0%,  100% { transform: translateX(0);    }
+            20%        { transform: translateX(-8px); }
+            40%        { transform: translateX(8px);  }
+            60%        { transform: translateX(-6px); }
+            80%        { transform: translateX(4px);  }
+          }
+          .card-shake {
+            animation: shake 0.4s ease-in-out;
+          }
+        `}</style>
       </Head>
+
+      {/* Subtle grid backdrop */}
       <div
         className="fixed inset-0 pointer-events-none"
         style={{
@@ -121,8 +193,14 @@ export default function LoginPage() {
           <KeelStackPoweredBadge />
         </div>
 
+        {/*
+         * key={shakeKey} forces a remount on every new failure,
+         * which re-runs the CSS animation unconditionally — no setTimeout,
+         * no class toggling, no animation-reset hacks needed.
+         */}
         <div
-          className="rounded-xl border border-border p-7"
+          key={shakeKey}
+          className={`rounded-xl border border-border p-7 ${shakeKey > 0 ? "card-shake" : ""}`}
           style={{ background: "var(--surface)" }}
         >
           {step === "credentials" ? (
@@ -141,11 +219,12 @@ export default function LoginPage() {
                     type="email"
                     required
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={handleEmailChange}
                     placeholder="you@example.com"
                     className="w-full bg-bg border border-border rounded-lg px-3.5 py-2.5 text-sm text-fg placeholder:text-muted focus:border-accent transition-colors outline-none"
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-medium text-fg-muted mb-1.5 uppercase tracking-wider">
                     Password
@@ -154,7 +233,7 @@ export default function LoginPage() {
                     type="password"
                     required
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={handlePasswordChange}
                     placeholder="••••••••"
                     className="w-full bg-bg border border-border rounded-lg px-3.5 py-2.5 text-sm text-fg placeholder:text-muted focus:border-accent transition-colors outline-none"
                   />
@@ -220,7 +299,7 @@ export default function LoginPage() {
                   maxLength={6}
                   required
                   value={mfaCode}
-                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onChange={handleMfaCodeChange}
                   placeholder="000000"
                   className="w-full bg-bg border border-border rounded-lg px-3.5 py-2.5 text-center text-2xl font-mono tracking-[0.5em] text-fg focus:border-accent transition-colors outline-none"
                 />
@@ -238,17 +317,10 @@ export default function LoginPage() {
                 >
                   {loading ? "Verifying…" : "Verify"}
                 </button>
+
                 <button
                   type="button"
-                  onClick={() => {
-                    setStep("credentials");
-                    setError("");
-                    setErrorCode(null);
-                    setMfaCode("");
-                    setChallengeToken("");
-                    setCodePreview(undefined);
-                    setMfaChallengeReady(false);
-                  }}
+                  onClick={handleBackToCredentials}
                   className="w-full text-fg-muted hover:text-fg text-sm py-1 transition-colors"
                 >
                   ← Back
