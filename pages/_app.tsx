@@ -2,6 +2,7 @@ import type { AppProps } from "next/app";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "../lib/auth-context";
 import { Analytics } from "@vercel/analytics/next"
+import { SpeedInsights } from "@vercel/speed-insights/next"
 import "../styles/globals.css";
 
 const queryClient = new QueryClient({
@@ -16,6 +17,7 @@ export default function App({ Component, pageProps }: AppProps) {
       <AuthProvider>
         <Component {...pageProps} />
         <Analytics/>
+        <SpeedInsights/>
       </AuthProvider>
     </QueryClientProvider>
   );
