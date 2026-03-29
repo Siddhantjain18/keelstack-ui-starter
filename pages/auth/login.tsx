@@ -6,7 +6,7 @@ import { KeelStackBrandLink, KeelStackPoweredBadge } from "../../components/Keel
 import { authApi, extractApiError, getAuthErrorMessage } from "../../lib/api-client";
 import { useAuth } from "../../lib/auth-context";
 
-/**
+/*
  * Login page — matches the engine's actual auth flow exactly.
  *
  * Engine flow:
@@ -25,15 +25,15 @@ export default function LoginPage() {
   const router = useRouter();
   const { setUser } = useAuth();
 
-  const [step, setStep]                   = useState<Step>("credentials");
-  const [email, setEmail]                 = useState("");
-  const [password, setPassword]           = useState("");
-  const [mfaCode, setMfaCode]             = useState("");
+  const [step, setStep] = useState<Step>("credentials");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
   const [challengeToken, setChallengeToken] = useState("");
-  const [codePreview, setCodePreview]     = useState<string | undefined>();
-  const [error, setError]                 = useState("");
-  const [errorCode, setErrorCode]         = useState<number | null>(null);
-  const [loading, setLoading]             = useState(false);
+  const [codePreview, setCodePreview] = useState<string | undefined>();
+  const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
   const [mfaChallengeReady, setMfaChallengeReady] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
@@ -84,7 +84,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await authApi.mfaVerify(email, challengeToken, mfaCode);
-      // mfaVerify returns { verified: true }  session was already stored by login().
+      // mfaVerify returns { verified: true } — session was already stored by login().
       // Restore user from storage into React context and proceed.
       const { tokenStore } = await import("../../lib/api-client");
       const stored = tokenStore.getUser();
@@ -99,8 +99,7 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
-    }
-  }
+  } // ✅ Only one closing brace for handleMfa
 
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center px-4">
@@ -142,13 +141,7 @@ export default function LoginPage() {
                     type="email"
                     required
                     value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      if (error) {
-                        setError("");
-                        setErrorCode(null);
-                      }
-                    }}
+                    onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
                     className="w-full bg-bg border border-border rounded-lg px-3.5 py-2.5 text-sm text-fg placeholder:text-muted focus:border-accent transition-colors outline-none"
                   />
@@ -161,13 +154,7 @@ export default function LoginPage() {
                     type="password"
                     required
                     value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      if (error) {
-                        setError("");
-                        setErrorCode(null);
-                      }
-                    }}
+                    onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     className="w-full bg-bg border border-border rounded-lg px-3.5 py-2.5 text-sm text-fg placeholder:text-muted focus:border-accent transition-colors outline-none"
                   />
