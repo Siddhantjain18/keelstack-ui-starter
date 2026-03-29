@@ -23,7 +23,9 @@ export default function RegisterPage() {
       setDone(true);
     } catch (err) {
       const apiError = extractApiError(err);
-      setError(getAuthErrorMessage(err, "register"));
+      let msg = getAuthErrorMessage(err, "register");
+      if (!msg) msg = "An unexpected error occurred. Please try again.";
+      setError(msg);
       setErrorCode(apiError.statusCode ?? null);
     } finally {
       setLoading(false);
@@ -86,7 +88,13 @@ export default function RegisterPage() {
                     type="email"
                     required
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) {
+                        setError("");
+                        setErrorCode(null);
+                      }
+                    }}
                     placeholder="you@example.com"
                     className="w-full bg-bg border border-border rounded-lg px-3.5 py-2.5 text-sm text-fg placeholder:text-muted focus:border-accent transition-colors outline-none"
                   />
@@ -101,7 +109,13 @@ export default function RegisterPage() {
                     required
                     minLength={8}
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (error) {
+                        setError("");
+                        setErrorCode(null);
+                      }
+                    }}
                     placeholder="••••••••"
                     className="w-full bg-bg border border-border rounded-lg px-3.5 py-2.5 text-sm text-fg placeholder:text-muted focus:border-accent transition-colors outline-none"
                   />

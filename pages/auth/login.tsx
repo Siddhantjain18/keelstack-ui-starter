@@ -68,7 +68,9 @@ export default function LoginPage() {
       router.push("/");
     } catch (err) {
       const apiError = extractApiError(err);
-      setError(getAuthErrorMessage(err, "login"));
+      let msg = getAuthErrorMessage(err, "login");
+      if (!msg) msg = "An unexpected error occurred. Please try again.";
+      setError(msg);
       setErrorCode(apiError.statusCode ?? null);
     } finally {
       setLoading(false);
@@ -80,10 +82,9 @@ export default function LoginPage() {
     setError("");
     setErrorCode(null);
     setLoading(true);
-
     try {
       await authApi.mfaVerify(email, challengeToken, mfaCode);
-      // mfaVerify returns { verified: true } — session was already stored by login().
+      // mfaVerify returns { verified: true }  session was already stored by login().
       // Restore user from storage into React context and proceed.
       const { tokenStore } = await import("../../lib/api-client");
       const stored = tokenStore.getUser();
@@ -91,10 +92,13 @@ export default function LoginPage() {
       router.push("/");
     } catch (err) {
       const apiError = extractApiError(err);
-      setError(getAuthErrorMessage(err, "mfa"));
+      let msg = getAuthErrorMessage(err, "mfa");
+      if (!msg) msg = "An unexpected error occurred. Please try again.";
+      setError(msg);
       setErrorCode(apiError.statusCode ?? null);
     } finally {
       setLoading(false);
+    }
     }
   }
 
@@ -138,7 +142,13 @@ export default function LoginPage() {
                     type="email"
                     required
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) {
+                        setError("");
+                        setErrorCode(null);
+                      }
+                    }}
                     placeholder="you@example.com"
                     className="w-full bg-bg border border-border rounded-lg px-3.5 py-2.5 text-sm text-fg placeholder:text-muted focus:border-accent transition-colors outline-none"
                   />
@@ -151,7 +161,13 @@ export default function LoginPage() {
                     type="password"
                     required
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (error) {
+                        setError("");
+                        setErrorCode(null);
+                      }
+                    }}
                     placeholder="••••••••"
                     className="w-full bg-bg border border-border rounded-lg px-3.5 py-2.5 text-sm text-fg placeholder:text-muted focus:border-accent transition-colors outline-none"
                   />
