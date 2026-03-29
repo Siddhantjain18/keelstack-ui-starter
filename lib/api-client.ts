@@ -39,15 +39,33 @@ export interface KSUser {
 
 /**
  * POST /api/v1/auth/login → AuthService.loginUser()
- * Returns: { sessionToken, refreshToken, sessionExpiresAt, user }
- * NOTE: engine does NOT return mfaRequired from /login.
- *       MFA is a separate explicit flow — see authApi.mfaChallenge().
+ *
+ * The engine returns ONE of two shapes depending on mfaEnabled:
+ *
+ *   Non-MFA user:
+ *     { sessionToken, refreshToken, sessionExpiresAt, user }
+ *
+ *   MFA user:
+ *     { mfaRequired: true, user }   ← NO tokens. Session is NOT issued yet.
+ *     The client must complete mfaChallenge() + mfaVerify() to get tokens.
+ *
+ * This union is intentional. Do NOT call storeLoginSession() on the MFA
+ * variant — it has no tokens to store.
  */
-export interface KSLoginResponse {
+export type KSLoginResponse = KSLoginSuccess | KSLoginMfaRequired;
+
+export interface KSLoginSuccess {
   sessionToken: string;
   refreshToken: string;
   sessionExpiresAt: string;
   user: { id: string; email: string; mfaEnabled: boolean };
+  mfaRequired?: never; // discriminant: absent on success
+}
+
+export interface KSLoginMfaRequired {
+  mfaRequired: true;
+  user: { id: string; email: string; mfaEnabled: boolean };
+  sessionToken?: never; // discriminant: absent on MFA gate
 }
 
 /**
@@ -73,14 +91,17 @@ export interface KSMfaChallengeResponse {
 
 /**
  * POST /api/v1/auth/mfa/verify → AuthService.verifyMfa()
- * Returns: { verified: true }
- * NOTE: does NOT issue a session. After MFA verify the client must
- *       call /login again (MFA-enabled users skip the challenge on
- *       subsequent logins once verified, depending on your flow).
- *       In this engine MFA verify is a standalone confirmation step.
+ * Returns: { sessionToken, refreshToken, sessionExpiresAt, user }
+ *
+ * IMPORTANT: The engine DOES issue a full session here — it is NOT just
+ * { verified: true }. The old comment in the codebase was wrong. verifyMfa()
+ * in AuthService.ts calls saveSession() and returns full tokens. Store them.
  */
 export interface KSMfaVerifyResponse {
-  verified: true;
+  sessionToken: string;
+  refreshToken: string;
+  sessionExpiresAt: string;
+  user: { id: string; email: string; mfaEnabled: boolean };
 }
 
 export interface KSSubscription {
@@ -159,10 +180,17 @@ export const tokenStore = {
   },
 };
 
-function storeLoginSession(res: KSLoginResponse): void {
+function storeLoginSession(res: KSLoginSuccess): void {
   tokenStore.setSession(res.sessionToken);
   tokenStore.setRefresh(res.refreshToken);
   tokenStore.setTenantId(res.user.id); // userId doubles as tenantId in single-tenant apps
+  tokenStore.setUser({ ...res.user });
+}
+
+function storeMfaSession(res: KSMfaVerifyResponse): void {
+  tokenStore.setSession(res.sessionToken);
+  tokenStore.setRefresh(res.refreshToken);
+  tokenStore.setTenantId(res.user.id);
   tokenStore.setUser({ ...res.user });
 }
 
@@ -170,6 +198,31 @@ function storeRefreshedSession(res: KSRefreshResponse): void {
   tokenStore.setSession(res.sessionToken);
   tokenStore.setRefresh(res.refreshToken);
   // tenantId and user unchanged — only tokens rotated
+}
+
+// ─── Auth route URLs that must NOT trigger the 401 redirect interceptor ───────
+//
+// Bug fix: the response interceptor was redirecting to /auth/login on ANY 401,
+// including the login endpoint itself. A failed login returns 401 "Invalid
+// credentials" — the interceptor caught it, wiped the page before React could
+// render the error, and the user saw nothing.
+//
+// The fix: skip the refresh+redirect logic for auth endpoints. These endpoints
+// are supposed to return 401 to the caller — let the caller handle it.
+const AUTH_PASSTHROUGH_URLS = [
+  "/api/v1/auth/login",
+  "/api/v1/auth/register",
+  "/api/v1/auth/mfa/challenge",
+  "/api/v1/auth/mfa/verify",
+  "/api/v1/auth/password-reset/request",
+  "/api/v1/auth/password-reset/confirm",
+  "/api/v1/auth/email-verification/request",
+  "/api/v1/auth/email-verification/confirm",
+];
+
+function isAuthPassthroughUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  return AUTH_PASSTHROUGH_URLS.some((authUrl) => url.includes(authUrl));
 }
 
 // ─── Axios instance ───────────────────────────────────────────────────────────
@@ -201,6 +254,15 @@ function createClient(): AxiosInstance {
     (res) => res,
     async (err: AxiosError) => {
       const original = err.config as typeof err.config & { _retry?: boolean };
+
+      // ── Auth endpoints: never intercept, always let caller handle the error ─
+      // A 401 from /auth/login means "wrong password" — not an expired session.
+      // Redirecting to /auth/login here would wipe the page before React renders
+      // the error message.
+      if (isAuthPassthroughUrl(original?.url)) {
+        return Promise.reject(err);
+      }
+
       if (err.response?.status === 401 && !original?._retry) {
         const refreshToken = tokenStore.getRefresh();
         if (!refreshToken) {
@@ -275,24 +337,38 @@ export function getAuthErrorMessage(err: unknown, mode: "register" | "login" | "
     if (apiError.statusCode === 409 || message.includes("already registered")) {
       return "That email already has an account. Sign in instead, or use password reset if you do not remember the password.";
     }
-    return apiError.message;
+    if (apiError.statusCode === 400) {
+      return "Please enter a valid email and a password of at least 8 characters.";
+    }
+    return "Registration failed. Please try again.";
   }
 
   if (mode === "login") {
-    if (message.includes("invalid credentials")) {
+    if (apiError.statusCode === 401 || message.includes("invalid credentials")) {
       return "That email/password combination was rejected. Double-check your password, or reset it if needed.";
     }
-    if (message.includes("locked")) {
+    if (apiError.statusCode === 423 || message.includes("locked")) {
       return "This account is temporarily locked after repeated failed sign-in attempts. Wait a bit, then try again or reset the password.";
     }
-    return apiError.message;
+    if (apiError.statusCode === 400) {
+      return "Please enter a valid email and password.";
+    }
+    if (apiError.statusCode === 429) {
+      return "Too many sign-in attempts. Please wait a moment before trying again.";
+    }
+    return "Sign-in failed. Please try again.";
   }
 
-  if (message.includes("invalid") || message.includes("expired")) {
+  // mode === "mfa"
+  if (
+    apiError.statusCode === 401 ||
+    message.includes("invalid") ||
+    message.includes("expired")
+  ) {
     return "That MFA code was not accepted. Enter the latest 6-digit code and try again.";
   }
 
-  return apiError.message;
+  return "Verification failed. Please try again.";
 }
 
 // ─── Auth API ─────────────────────────────────────────────────────────────────
@@ -317,27 +393,31 @@ export const authApi = {
 
   /**
    * POST /api/v1/auth/login
-   * Returns: { sessionToken, refreshToken, sessionExpiresAt, user }
    *
-   * MFA NOTE: The engine does NOT return mfaRequired from this endpoint.
-   * If user.mfaEnabled is true in the response, the session IS issued
-   * but the caller should present an MFA step separately using
-   * mfaChallenge() / mfaVerify() before granting full access.
-   * The engine trusts the session token unconditionally once issued.
+   * Returns one of two shapes:
+   *   KSLoginSuccess      — full session tokens (mfaEnabled: false)
+   *   KSLoginMfaRequired  — { mfaRequired: true, user } only (mfaEnabled: true)
+   *
+   * storeLoginSession() is only called for the success shape.
+   * Do NOT store anything for the MFA gate — tokens come from mfaVerify().
    */
   login: async (email: string, password: string): Promise<KSLoginResponse> => {
     const { data } = await http.post<KSLoginResponse>("/api/v1/auth/login", {
       email,
       password,
     });
-    storeLoginSession(data);
+    // Only store session if we actually got tokens.
+    // The MFA variant has no tokens — storing undefined would poison localStorage.
+    if (!data.mfaRequired) {
+      storeLoginSession(data as KSLoginSuccess);
+    }
     return data;
   },
 
   /**
    * POST /api/v1/auth/mfa/challenge
    * Returns: { challengeToken, expiresAt, codePreview? }
-   * Call this when user.mfaEnabled === true, BEFORE or AFTER login.
+   * Call this when mfaRequired === true, before verifying.
    */
   mfaChallenge: async (email: string): Promise<KSMfaChallengeResponse> => {
     const { data } = await http.post("/api/v1/auth/mfa/challenge", { email });
@@ -346,19 +426,23 @@ export const authApi = {
 
   /**
    * POST /api/v1/auth/mfa/verify
-   * Returns: { verified: true }
-   * Does NOT issue a session — this is a standalone confirmation step.
+   * Returns: { sessionToken, refreshToken, sessionExpiresAt, user }
+   *
+   * This IS the session issuance step for MFA users.
+   * The engine's AuthService.verifyMfa() calls saveSession() and returns
+   * full tokens. Store them here.
    */
   mfaVerify: async (
     email: string,
     challengeToken: string,
     code: string
   ): Promise<KSMfaVerifyResponse> => {
-    const { data } = await http.post("/api/v1/auth/mfa/verify", {
+    const { data } = await http.post<KSMfaVerifyResponse>("/api/v1/auth/mfa/verify", {
       email,
       challengeToken,
       code,
     });
+    storeMfaSession(data);
     return data;
   },
 

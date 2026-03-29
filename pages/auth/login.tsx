@@ -9,19 +9,22 @@ import { useAuth } from "../../lib/auth-context";
 /*
  * Login page — matches the engine's actual auth flow exactly.
  *
- * Engine flow:
- *   POST /auth/login → always returns a session (sessionToken + user)
- *   If user.mfaEnabled === true, we show an MFA step as a UI gate before
- *   proceeding — but the session is already issued. The engine does not
- *   withhold the session pending MFA; MFA verify is a standalone confirmation.
+ * Engine flow (AuthService.ts):
+ *
+ *   POST /auth/login
+ *     Non-MFA user → { sessionToken, refreshToken, sessionExpiresAt, user }
+ *     MFA user     → { mfaRequired: true, user }   ← NO tokens yet
  *
  *   POST /auth/mfa/challenge → { challengeToken, expiresAt, codePreview? }
- *   POST /auth/mfa/verify   → { verified: true }  (no new session issued)
+ *   POST /auth/mfa/verify   → { sessionToken, refreshToken, sessionExpiresAt, user }
+ *                              Full session issued here for MFA users.
+ *                              storeMfaSession() called inside authApi.mfaVerify().
  *
- * UX notes:
- *   - Error is NOT cleared on re-submit. It persists until the user types again.
- *   - On failure, the card shakes (CSS keyframe, driven by shakeKey remount).
- *   - shakeKey increments on every failure so the animation always re-triggers.
+ * UX:
+ *   - Error is NOT cleared on re-submit. It persists until the user types.
+ *   - On failure the card shakes. shakeKey remount re-triggers the animation
+ *     every time without setTimeout or class-toggle hacks.
+ *   - Shake keyframe lives in globals.css — not duplicated here.
  */
 
 type Step = "credentials" | "mfa";
@@ -30,15 +33,15 @@ export default function LoginPage() {
   const router = useRouter();
   const { setUser } = useAuth();
 
-  const [step, setStep] = useState<Step>("credentials");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [mfaCode, setMfaCode] = useState("");
-  const [challengeToken, setChallengeToken] = useState("");
-  const [codePreview, setCodePreview] = useState<string | undefined>();
-  const [error, setError] = useState("");
-  const [errorCode, setErrorCode] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [step, setStep]                           = useState<Step>("credentials");
+  const [email, setEmail]                         = useState("");
+  const [password, setPassword]                   = useState("");
+  const [mfaCode, setMfaCode]                     = useState("");
+  const [challengeToken, setChallengeToken]       = useState("");
+  const [codePreview, setCodePreview]             = useState<string | undefined>();
+  const [error, setError]                         = useState("");
+  const [errorCode, setErrorCode]                 = useState<number | null>(null);
+  const [loading, setLoading]                     = useState(false);
   const [mfaChallengeReady, setMfaChallengeReady] = useState(false);
 
   // Incrementing this key forces a remount of the card div,
@@ -49,44 +52,43 @@ export default function LoginPage() {
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    // ⚠️  Do NOT clear the error here — keep it visible while the new
-    // request is in-flight so the user doesn't lose context.
+    // Do NOT clear error here — keep it visible while the request is in-flight.
+    // Error only clears when the user starts typing again.
     setLoading(true);
 
     try {
-      const session = await authApi.login(email, password);
-      // storeLoginSession() already called inside authApi.login()
+      const response = await authApi.login(email, password);
 
-      if (session.user.mfaEnabled) {
-        // Session is issued but we gate UI access on MFA confirmation.
-        // Request a challenge so the user can prove possession.
+      if (response.mfaRequired) {
+        // Engine returned { mfaRequired: true, user } — no session tokens yet.
+        // Request a challenge so the user can verify possession.
         try {
           const challenge = await authApi.mfaChallenge(email);
           setChallengeToken(challenge.challengeToken);
-          setCodePreview(challenge.codePreview); // only present in dev
+          setCodePreview(challenge.codePreview); // only present in dev/staging
           setMfaChallengeReady(true);
-          setError(""); // clear on successful step transition
+          setError("");        // clear on successful step transition
           setErrorCode(null);
           setStep("mfa");
         } catch (mfaErr) {
-          const msg =
-            "Your password was accepted, but we could not start the MFA challenge. Please try again in a moment.";
-          setError(msg);
+          setError(
+            "Your password was accepted, but we could not start the MFA challenge. Please try again in a moment."
+          );
           setErrorCode(extractApiError(mfaErr).statusCode ?? null);
           setShakeKey((k) => k + 1);
         }
         return;
       }
 
-      setUser(session.user);
+      // Non-MFA success — session already stored by authApi.login()
+      setUser(response.user);
       router.push("/");
     } catch (err) {
       const apiError = extractApiError(err);
-      let msg = getAuthErrorMessage(err, "login");
-      if (!msg) msg = "An unexpected error occurred. Please try again.";
+      const msg = getAuthErrorMessage(err, "login");
       setError(msg);
       setErrorCode(apiError.statusCode ?? null);
-      setShakeKey((k) => k + 1); // triggers shake re-animation
+      setShakeKey((k) => k + 1);
     } finally {
       setLoading(false);
     }
@@ -96,55 +98,40 @@ export default function LoginPage() {
 
   async function handleMfa(e: React.FormEvent) {
     e.preventDefault();
-    // Same rule: don't wipe the error on re-submit, let it stay visible.
     setLoading(true);
 
     try {
-      await authApi.mfaVerify(email, challengeToken, mfaCode);
-      // mfaVerify returns { verified: true } — session was already stored by login().
-      // Restore user from storage into React context and proceed.
-      const { tokenStore } = await import("../../lib/api-client");
-      const stored = tokenStore.getUser();
-      if (stored) setUser(stored);
+      // authApi.mfaVerify() calls storeMfaSession() internally — full session
+      // is stored in localStorage before this line returns.
+      const mfaResult = await authApi.mfaVerify(email, challengeToken, mfaCode);
+      setUser(mfaResult.user);
       router.push("/");
     } catch (err) {
       const apiError = extractApiError(err);
-      let msg = getAuthErrorMessage(err, "mfa");
-      if (!msg) msg = "An unexpected error occurred. Please try again.";
+      const msg = getAuthErrorMessage(err, "mfa");
       setError(msg);
       setErrorCode(apiError.statusCode ?? null);
-      setShakeKey((k) => k + 1); // triggers shake re-animation
+      setShakeKey((k) => k + 1);
     } finally {
       setLoading(false);
     }
   }
 
-  // ─── Helpers ────────────────────────────────────────────────────────────────
+  // ─── Input handlers — clear error when user starts correcting ───────────────
 
   function handleEmailChange(e: React.ChangeEvent<HTMLInputElement>) {
     setEmail(e.target.value);
-    // Clear the error as soon as the user starts correcting input —
-    // this is when they've acknowledged it and are acting on it.
-    if (error) {
-      setError("");
-      setErrorCode(null);
-    }
+    if (error) { setError(""); setErrorCode(null); }
   }
 
   function handlePasswordChange(e: React.ChangeEvent<HTMLInputElement>) {
     setPassword(e.target.value);
-    if (error) {
-      setError("");
-      setErrorCode(null);
-    }
+    if (error) { setError(""); setErrorCode(null); }
   }
 
   function handleMfaCodeChange(e: React.ChangeEvent<HTMLInputElement>) {
     setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6));
-    if (error) {
-      setError("");
-      setErrorCode(null);
-    }
+    if (error) { setError(""); setErrorCode(null); }
   }
 
   function handleBackToCredentials() {
@@ -163,21 +150,10 @@ export default function LoginPage() {
     <div className="min-h-screen bg-bg flex items-center justify-center px-4">
       <Head>
         <title>Login | KeelStack Demo</title>
-        <style>{`
-          @keyframes shake {
-            0%,  100% { transform: translateX(0);    }
-            20%        { transform: translateX(-8px); }
-            40%        { transform: translateX(8px);  }
-            60%        { transform: translateX(-6px); }
-            80%        { transform: translateX(4px);  }
-          }
-          .card-shake {
-            animation: shake 0.4s ease-in-out;
-          }
-        `}</style>
+        {/* shake keyframe is defined in globals.css — not duplicated here */}
       </Head>
 
-      {/* Subtle grid backdrop */}
+      {/* Grid backdrop */}
       <div
         className="fixed inset-0 pointer-events-none"
         style={{
@@ -194,13 +170,13 @@ export default function LoginPage() {
         </div>
 
         {/*
-         * key={shakeKey} forces a remount on every new failure,
-         * which re-runs the CSS animation unconditionally — no setTimeout,
-         * no class toggling, no animation-reset hacks needed.
+         * key={shakeKey} forces a full remount on every failure,
+         * re-triggering the CSS animation unconditionally.
+         * shakeKey starts at 0 so no animation fires on first render.
          */}
         <div
           key={shakeKey}
-          className={`rounded-xl border border-border p-7 ${shakeKey > 0 ? "card-shake" : ""}`}
+          className={`rounded-xl border border-border p-7 ${shakeKey > 0 ? "shake" : ""}`}
           style={{ background: "var(--surface)" }}
         >
           {step === "credentials" ? (
