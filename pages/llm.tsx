@@ -21,7 +21,12 @@ export default function LLMPage() {
   const isPublicDemo = !isAuthenticated;
 
   // Real token budget from the engine's TokenBudgetTracker
-  const { data: budget, refetch: refetchBudget } = useQuery({
+  const {
+    data: budget,
+    refetch: refetchBudget,
+    isPending: isBudgetPending,
+    isFetching: isBudgetFetching,
+  } = useQuery({
     queryKey: ["llm", "budget"],
     queryFn: () => llmApi.getBudget(),
     enabled: isAuthenticated,
@@ -49,17 +54,28 @@ export default function LLMPage() {
         ...prev,
       ]);
       setError("");
-      // Refetch budget immediately so the meter updates
+      // Budget usage usually updates after the background task advances, not
+      // at accept-time, so we refresh a few times after submission.
       void refetchBudget();
+      if (typeof window !== "undefined") {
+        window.setTimeout(() => void refetchBudget(), 2_500);
+        window.setTimeout(() => void refetchBudget(), 6_000);
+      }
     },
     onError: (err) => setError(extractApiError(err).message),
   });
 
   if (isLoading) return null;
 
-  const tokensUsed   = budget?.tokensUsedThisHour ?? 6840;
-  const budgetTotal  = budget?.budgetPerHour ?? 10000;
-  const percentUsed  = budget?.percentUsed ?? 68.4;
+  const demoBudget = {
+    tokensUsedThisHour: 6840,
+    budgetPerHour: 10000,
+    percentUsed: 68.4,
+  };
+  const budgetView = isPublicDemo ? demoBudget : budget;
+  const tokensUsed   = budgetView?.tokensUsedThisHour ?? 0;
+  const budgetTotal  = budgetView?.budgetPerHour ?? 10000;
+  const percentUsed  = budgetView?.percentUsed ?? 0;
   const remaining    = budget?.remainingTokens ?? Math.max(0, budgetTotal - tokensUsed);
   const budgetColor  =
     percentUsed > 85 ? "bg-danger" : percentUsed > 60 ? "bg-warning" : "bg-success";
@@ -158,6 +174,11 @@ export default function LLMPage() {
                   Demo Only
                 </p>
               )}
+              {!isPublicDemo && isBudgetFetching && (
+                <p className="mb-1 inline-flex rounded-full border border-border bg-bg px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-fg-muted">
+                  Syncing
+                </p>
+              )}
               <p className="font-mono text-lg font-bold text-fg">
                 {tokensUsed.toLocaleString()}
               </p>
@@ -187,6 +208,10 @@ export default function LLMPage() {
             <p className="text-xs text-muted font-mono mt-2">
               {isPublicDemo
                 ? "Demo snapshot shown. Real per-user quota windows appear after login."
+                : isBudgetPending
+                ? "Waiting for the engine to return your live budget window."
+                : stubMode
+                ? "Stub mode is active, so usage may stay unchanged because no real provider tokens are consumed."
                 : "Waiting for the next budget window update."}
             </p>
           )}

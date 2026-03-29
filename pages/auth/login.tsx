@@ -34,6 +34,7 @@ export default function LoginPage() {
   const [error, setError]                 = useState("");
   const [errorCode, setErrorCode]         = useState<number | null>(null);
   const [loading, setLoading]             = useState(false);
+  const [mfaChallengeReady, setMfaChallengeReady] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -52,12 +53,13 @@ export default function LoginPage() {
           const challenge = await authApi.mfaChallenge(email);
           setChallengeToken(challenge.challengeToken);
           setCodePreview(challenge.codePreview); // only present in dev
+          setMfaChallengeReady(true);
           setStep("mfa");
         } catch (mfaErr) {
-          // Challenge request failed — still let them in, just skip MFA step.
-          // In production you'd want to enforce this more strictly.
-          setUser(session.user);
-          router.push("/");
+          setError(
+            "Your password was accepted, but we could not start the MFA challenge. Please try again in a moment."
+          );
+          setErrorCode(extractApiError(mfaErr).statusCode ?? null);
         }
         return;
       }
@@ -228,14 +230,22 @@ export default function LoginPage() {
 
                 <button
                   type="submit"
-                  disabled={loading || mfaCode.length !== 6}
+                  disabled={loading || mfaCode.length !== 6 || !mfaChallengeReady}
                   className="w-full bg-accent hover:bg-accent-dim text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                 >
                   {loading ? "Verifying…" : "Verify"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setStep("credentials"); setError(""); setMfaCode(""); }}
+                  onClick={() => {
+                    setStep("credentials");
+                    setError("");
+                    setErrorCode(null);
+                    setMfaCode("");
+                    setChallengeToken("");
+                    setCodePreview(undefined);
+                    setMfaChallengeReady(false);
+                  }}
                   className="w-full text-fg-muted hover:text-fg text-sm py-1 transition-colors"
                 >
                   ← Back

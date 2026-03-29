@@ -13,8 +13,14 @@ export default function EmailVerificationPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
+    if (!router.isReady) return;
+
     const token = router.query.token as string | undefined;
-    if (!router.isReady || !token) return;
+    if (!token) {
+      setMessage("Missing verification token. Use the link from your email.");
+      setState("error");
+      return;
+    }
 
     authApi
       .confirmEmailVerification(token)
