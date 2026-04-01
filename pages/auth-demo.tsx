@@ -12,16 +12,16 @@ const STEPS = [
     cta: "Start with Register",
   },
   {
-    title: "Log in and challenge MFA",
-    desc: "Walk through sign-in, MFA challenge creation, and code verification on a separate sharable page.",
+    title: "Sign in with password or OAuth",
+    desc: "Use email/password, Google Sign-In, or Sign in with Apple against the live backend auth routes.",
     href: "/auth/login",
     cta: "Open Login Demo",
   },
   {
-    title: "Continue into secure actions",
-    desc: "After sign-in, return to billing, jobs, and AI pages with a real session behind the same UI.",
-    href: "/billing",
-    cta: "Open Secure Demo",
+    title: "Manage MFA after login",
+    desc: "Run enable request/confirm and disable request/confirm from the authenticated MFA settings page.",
+    href: "/auth/mfa",
+    cta: "Open MFA Settings",
   },
 ];
 
@@ -82,8 +82,8 @@ export default function AuthDemoPage() {
               </div>
               <ul className="space-y-2 text-xs text-fg-muted">
                 <li>Register and email verification</li>
-                <li>Login and MFA challenge verification</li>
-                <li>Return to secure account actions</li>
+                <li>Login with password, Google, or Apple</li>
+                <li>MFA enable/disable request + confirm</li>
               </ul>
             </div>
           </div>

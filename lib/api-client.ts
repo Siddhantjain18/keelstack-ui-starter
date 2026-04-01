@@ -104,6 +104,18 @@ export interface KSMfaVerifyResponse {
   user: { id: string; email: string; mfaEnabled: boolean };
 }
 
+export interface KSOAuthCallbackSession {
+  sessionToken: string;
+  refreshToken: string;
+  user?: { id: string; email: string; mfaEnabled: boolean };
+}
+
+export interface KSMfaToggleChallengeResponse {
+  challengeToken: string;
+  expiresAt: string;
+  codePreview?: string;
+}
+
 export interface KSSubscription {
   tenantId: string;
   customerEmail: string;
@@ -173,6 +185,10 @@ export const tokenStore = {
     try { return JSON.parse(localStorage.getItem(USER_KEY) ?? "null"); } catch { return null; }
   },
   setUser: (u: KSUser) => localStorage.setItem(USER_KEY, JSON.stringify(u)),
+  setOAuthSession: (sessionToken: string, refreshToken: string) => {
+    localStorage.setItem(SESSION_KEY, sessionToken);
+    localStorage.setItem(REFRESH_KEY, refreshToken);
+  },
   clear: () => {
     [SESSION_KEY, REFRESH_KEY, TENANT_KEY, USER_KEY].forEach((k) =>
       localStorage.removeItem(k)
@@ -192,6 +208,14 @@ function storeMfaSession(res: KSMfaVerifyResponse): void {
   tokenStore.setRefresh(res.refreshToken);
   tokenStore.setTenantId(res.user.id);
   tokenStore.setUser({ ...res.user });
+}
+
+function storeOAuthSession(payload: KSOAuthCallbackSession): void {
+  tokenStore.setOAuthSession(payload.sessionToken, payload.refreshToken);
+  if (payload.user) {
+    tokenStore.setTenantId(payload.user.id);
+    tokenStore.setUser({ ...payload.user });
+  }
 }
 
 function storeRefreshedSession(res: KSRefreshResponse): void {
@@ -374,6 +398,17 @@ export function getAuthErrorMessage(err: unknown, mode: "register" | "login" | "
 // ─── Auth API ─────────────────────────────────────────────────────────────────
 
 export const authApi = {
+  getOAuthStartUrl: (provider: "google" | "apple"): string => {
+    const configuredBase =
+      process.env.NEXT_PUBLIC_KEELSTACK_AUTH_API_BASE?.replace(/\/$/, "") ?? "";
+    const routePath = `/api/v1/auth/${provider}`;
+    return configuredBase ? `${configuredBase}${routePath}` : routePath;
+  },
+
+  completeOAuthSession: (payload: KSOAuthCallbackSession): void => {
+    storeOAuthSession(payload);
+  },
+
   /**
    * POST /api/v1/auth/register
    * Returns: { user: { id, email, mfaEnabled } }
@@ -443,6 +478,58 @@ export const authApi = {
       code,
     });
     storeMfaSession(data);
+    return data;
+  },
+
+  /**
+   * POST /api/v1/auth/mfa/enable/request
+   * Auth required. Sends challenge code to the signed-in user's email.
+   */
+  requestMfaEnable: async (): Promise<KSMfaToggleChallengeResponse> => {
+    const { data } = await http.post<KSMfaToggleChallengeResponse>(
+      "/api/v1/auth/mfa/enable/request"
+    );
+    return data;
+  },
+
+  /**
+   * POST /api/v1/auth/mfa/enable/confirm
+   * Auth required. Confirms challenge and enables MFA.
+   */
+  confirmMfaEnable: async (
+    challengeToken: string,
+    code: string
+  ): Promise<{ mfaEnabled: boolean }> => {
+    const { data } = await http.post<{ mfaEnabled: boolean }>(
+      "/api/v1/auth/mfa/enable/confirm",
+      { challengeToken, code }
+    );
+    return data;
+  },
+
+  /**
+   * POST /api/v1/auth/mfa/disable/request
+   * Auth required. Sends challenge code to the signed-in user's email.
+   */
+  requestMfaDisable: async (): Promise<KSMfaToggleChallengeResponse> => {
+    const { data } = await http.post<KSMfaToggleChallengeResponse>(
+      "/api/v1/auth/mfa/disable/request"
+    );
+    return data;
+  },
+
+  /**
+   * POST /api/v1/auth/mfa/disable/confirm
+   * Auth required. Confirms challenge and disables MFA.
+   */
+  confirmMfaDisable: async (
+    challengeToken: string,
+    code: string
+  ): Promise<{ mfaEnabled: boolean }> => {
+    const { data } = await http.post<{ mfaEnabled: boolean }>(
+      "/api/v1/auth/mfa/disable/confirm",
+      { challengeToken, code }
+    );
     return data;
   },
 

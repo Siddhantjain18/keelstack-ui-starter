@@ -46,6 +46,10 @@ The LLM page surfaces `LLMClient`'s boundary layer:
 ### Auth — Full Session Lifecycle
 
 - Login with automatic MFA step detection (engine returns `mfaRequired: true`)
+- Google Sign-In and Sign in with Apple via backend OAuth/OIDC routes
+- OAuth callback handling at `/auth/callback` with secure session token storage
+- OAuth error handling at `/auth/error` for provider-denied/callback failures
+- Logged-in MFA management page with enable/disable request + confirm flows
 - Access token + refresh token rotation handled by Axios interceptor — expired tokens are transparently refreshed
 - `authAttackProtection` middleware on the engine blocks brute-force on MFA and password reset routes
 
@@ -114,6 +118,7 @@ npm run dev -- -p 4000
 | Variable | Default | Description |
 |---|---|---|
 | `KEELSTACK_API_URL` | `http://localhost:3000` | Server-side URL of your KeelStack Engine. Used by Next.js SSR and the `/api/*` proxy rewrite — never exposed to the browser |
+| `NEXT_PUBLIC_KEELSTACK_AUTH_API_BASE` | empty | Optional absolute API base for OAuth start routes (`/api/v1/auth/google`, `/api/v1/auth/apple`). Leave empty to use same-origin `/api/*` rewrites |
 | `NEXT_PUBLIC_LLM_PROVIDER` | `stub` | Display only — mirrors engine's `LLM_PROVIDER` |
 | `NEXT_PUBLIC_LLM_MODEL` | `gpt-4o-mini` | Display only |
 | `NEXT_PUBLIC_LLM_MAX_TOKENS` | `1024` | Display only |
@@ -121,6 +126,22 @@ npm run dev -- -p 4000
 | `NEXT_PUBLIC_LLM_TIMEOUT_MS` | `30000` | Display only |
 
 The `NEXT_PUBLIC_LLM_*` variables are display-only — they mirror your engine config for the AI dashboard. They are not secrets and do not include API keys.
+
+### OAuth backend alignment
+
+Set backend OAuth redirect targets to this UI app:
+
+```env
+# in keelstack-engine/.env
+OAUTH_SUCCESS_REDIRECT_URI=http://localhost:3001/auth/callback
+OAUTH_ERROR_REDIRECT_URI=http://localhost:3001/auth/error
+OAUTH_RESPONSE_MODE=redirect
+```
+
+Provider callback URIs to register:
+
+- Google callback: `http://localhost:3000/api/v1/auth/google/callback`
+- Apple callback: `http://localhost:3000/api/v1/auth/apple/callback`
 
 ---
 
@@ -137,6 +158,13 @@ POST   /api/v1/auth/mfa/verify
 POST   /api/v1/auth/password-reset/request
 POST   /api/v1/auth/password-reset/confirm
 POST   /api/v1/auth/email-verification/request
+POST   /api/v1/auth/email-verification/confirm
+POST   /api/v1/auth/mfa/enable/request
+POST   /api/v1/auth/mfa/enable/confirm
+POST   /api/v1/auth/mfa/disable/request
+POST   /api/v1/auth/mfa/disable/confirm
+GET    /api/v1/auth/google
+GET    /api/v1/auth/apple
 
 GET    /api/v1/billing/subscriptions/current
 POST   /api/v1/billing/subscriptions
@@ -165,7 +193,10 @@ keelstack-ui-starter/
 │   ├── jobs.tsx               # Authenticated async task submit + 202+poll lifecycle
 │   ├── llm.tsx                # Token budget + LLMClient boundary
 │   └── auth/
-│       ├── login.tsx          # Login + MFA step
+│       ├── callback.tsx       # OAuth success callback (stores session tokens)
+│       ├── error.tsx          # OAuth provider failure surface
+│       ├── login.tsx          # Password login + MFA step + Google/Apple entry
+│       ├── mfa.tsx            # Logged-in MFA enable/disable request+confirm
 │       ├── register.tsx       # Registration
 │       └── reset-password.tsx # Password reset request
 ├── styles/
@@ -173,6 +204,29 @@ keelstack-ui-starter/
 ├── .env.local.example
 └── README.md
 ```
+
+---
+
+## MFA usage flow
+
+1. Sign in using password, Google, or Apple.
+2. Open `/auth/mfa` (or use the sidebar "MFA Settings").
+3. For enable flow: click "Enable request", enter the code, then "Enable confirm".
+4. For disable flow: click "Disable request", enter the code, then "Disable confirm".
+5. In non-production engine environments, `codePreview` is shown for easier local testing.
+
+## Troubleshooting
+
+- Social buttons redirect to wrong host:
+  Set `NEXT_PUBLIC_KEELSTACK_AUTH_API_BASE` or keep it empty and use Next rewrites.
+- OAuth callback returns missing token params:
+  Ensure backend `OAUTH_RESPONSE_MODE=redirect` and success redirect URI points to `/auth/callback`.
+- Apple callback fails with provider error:
+  Verify `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, and `APPLE_PRIVATE_KEY_PEM` in backend env.
+- MFA request says authentication required:
+  Confirm login completed and session token exists in localStorage.
+- MFA enable/disable returns conflict:
+  This is expected if you request enable while already enabled, or disable while already disabled.
 
 ---
 
