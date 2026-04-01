@@ -49,7 +49,7 @@ export default function LoginPage() {
   const [shakeKey, setShakeKey] = useState(0);
 
   const googleAuthUrl = authApi.getOAuthStartUrl("google");
-  const appleAuthUrl = authApi.getOAuthStartUrl("apple");
+  // const appleAuthUrl = authApi.getOAuthStartUrl("apple");
 
   // ─── Credential step ────────────────────────────────────────────────────────
 
@@ -259,13 +259,13 @@ export default function LoginPage() {
                   <GoogleIcon />
                   Sign in with Google
                 </a>
-                <a
+                {/* <a
                   href={appleAuthUrl}
                   className="w-full inline-flex items-center justify-center gap-2.5 rounded-lg border border-border bg-bg px-3.5 py-2.5 text-sm text-fg hover:border-accent/40 transition-colors"
                 >
                   <AppleIcon />
                   Sign in with Apple
-                </a>
+                </a> */}
               </div>
 
               <div className="mt-5 flex items-center justify-between text-xs text-fg-muted">
@@ -353,6 +353,7 @@ function GoogleIcon() {
   );
 }
 
+/*
 function AppleIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -360,3 +361,4 @@ function AppleIcon() {
     </svg>
   );
 }
+*/
