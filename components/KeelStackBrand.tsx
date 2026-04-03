@@ -2,24 +2,20 @@ type KeelStackBrandLinkProps = {
   compact?: boolean;
   showCaption?: boolean;
   className?: string;
+  asDiv?: boolean;
 };
 
 export function KeelStackBrandLink({
   compact = false,
   showCaption = true,
   className = "",
+  asDiv = false,
 }: KeelStackBrandLinkProps) {
-  return (
-    <a
-      href="https://keelstack.me"
-      target="_blank"
-      rel="noreferrer"
-      className={`flex items-center gap-3 min-w-0 ${className}`.trim()}
-      title="Visit KeelStack Engine"
-    >
+  const content = (
+    <>
       <KeelStackLogoMark />
       {!compact && (
-        <div className="min-w-0">
+        <div className="min-w-0 text-left">
           <p className="font-display font-bold text-fg tracking-tight text-sm leading-none">
             KeelStack Engine
           </p>
@@ -28,6 +24,24 @@ export function KeelStackBrandLink({
           )}
         </div>
       )}
+    </>
+  );
+
+  const classes = `flex items-center gap-3 min-w-0 ${className}`.trim();
+
+  if (asDiv) {
+    return <div className={classes}>{content}</div>;
+  }
+
+  return (
+    <a
+      href="https://keelstack.me"
+      target="_blank"
+      rel="noreferrer"
+      className={classes}
+      title="Visit KeelStack Engine"
+    >
+      {content}
     </a>
   );
 }
@@ -87,7 +101,7 @@ export function KeelStackSidebarCard() {
         Built with
       </p>
       <div className="flex items-center gap-3">
-        <KeelStackBrandLink showCaption={false} />
+        <KeelStackBrandLink showCaption={false} asDiv />
       </div>
       <div className="mt-3 flex items-center justify-between text-xs text-fg-muted">
         <span>Open keelstack.me</span>

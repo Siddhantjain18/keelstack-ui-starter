@@ -22,19 +22,45 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { pathname } = useRouter();
   const { user, logout, isAuthenticated } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen flex bg-bg text-fg">
+    <div className="min-h-screen flex flex-col md:flex-row bg-bg text-fg">
+      {/* Mobile Header */}
+      <div className="md:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-surface sticky top-0 z-50">
+        <KeelStackBrandLink compact />
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="p-2 text-fg-muted hover:text-fg transition-colors"
+          aria-label="Toggle menu"
+        >
+          {mobileMenuOpen ? (
+            <CloseIcon className="w-6 h-6" />
+          ) : (
+            <MenuIcon className="w-6 h-6" />
+          )}
+        </button>
+      </div>
+
+      {/* Sidebar - Backdrop (Mobile only) */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden animate-fade-in"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <aside
         className={clsx(
-          "flex flex-col border-r border-border transition-all duration-300 shrink-0",
-          collapsed ? "w-16" : "w-56"
+          "fixed inset-y-0 left-0 z-50 md:sticky flex flex-col border-r border-border transition-all duration-300 shrink-0 transform md:transform-none bg-surface",
+          mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+          collapsed ? "md:w-16" : "md:w-56",
+          "w-64" // fixed width on mobile
         )}
-        style={{ background: "var(--surface)" }}
       >
-        {/* Logo */}
-        <div className="flex items-center gap-3 px-4 py-5 border-b border-border">
+        {/* Logo (Desktop only) */}
+        <div className="hidden md:flex items-center gap-3 px-4 py-5 border-b border-border">
           <KeelStackBrandLink compact={collapsed} />
           <button
             onClick={() => setCollapsed(!collapsed)}
@@ -45,14 +71,26 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </button>
         </div>
 
+        {/* Mobile Sidebar Logo/Header */}
+        <div className="md:hidden flex items-center justify-between px-4 py-5 border-b border-border">
+          <KeelStackBrandLink />
+          <button
+            onClick={() => setMobileMenuOpen(false)}
+            className="text-fg-muted hover:text-fg transition-colors"
+          >
+            <CloseIcon className="w-5 h-5" />
+          </button>
+        </div>
+
         {/* Nav */}
-        <nav className="flex-1 py-4 px-2 space-y-1">
+        <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || (href !== "/" && pathname.startsWith(href));
             return (
               <Link
                 key={href}
                 href={href}
+                onClick={() => setMobileMenuOpen(false)}
                 className={clsx(
                   "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-all",
                   active
@@ -62,7 +100,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 title={collapsed ? label : undefined}
               >
                 <Icon className="w-4 h-4 shrink-0" />
-                {!collapsed && <span>{label}</span>}
+                <span className={clsx("md:block", collapsed ? "md:hidden" : "block")}>
+                  {label}
+                </span>
               </Link>
             );
           })}
@@ -70,40 +110,50 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {/* User */}
         <div className="border-t border-border p-3">
-          {!collapsed && <KeelStackSidebarCard />}
-          {user && !collapsed && (
-            <div className="mb-2 px-2">
+          <div className={clsx("md:block", collapsed ? "md:hidden" : "block")}>
+            <KeelStackSidebarCard />
+          </div>
+          {user && (
+            <div className={clsx("mb-2 px-2 md:block", collapsed ? "md:hidden" : "block")}>
               <p className="text-xs text-fg-muted truncate">{user.email}</p>
               <p className="text-xs font-mono text-accent">{user.role}</p>
             </div>
           )}
           {isAuthenticated ? (
             <button
-              onClick={logout}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-fg-muted hover:text-danger hover:bg-danger/10 transition-all"
+              onClick={() => {
+                logout();
+                setMobileMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-fg-muted hover:text-danger hover:bg-danger/10 transition-all font-medium"
               title={collapsed ? "Logout" : undefined}
             >
               <LogoutIcon className="w-4 h-4 shrink-0" />
-              {!collapsed && "Logout"}
+              <span className={clsx("md:block", collapsed ? "md:hidden" : "block")}>
+                Logout
+              </span>
             </button>
           ) : (
             <Link
               href="/auth-demo"
-              className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-fg-muted hover:text-accent hover:bg-accent/10 transition-all"
+              onClick={() => setMobileMenuOpen(false)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-fg-muted hover:text-accent hover:bg-accent/10 transition-all font-medium"
               title={collapsed ? "Try Auth Demo" : undefined}
             >
               <AuthDemoIcon className="w-4 h-4 shrink-0" />
-              {!collapsed && "Try Auth Demo"}
+              <span className={clsx("md:block", collapsed ? "md:hidden" : "block")}>
+                Try Auth Demo
+              </span>
             </Link>
           )}
         </div>
       </aside>
 
       {/* Main */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-x-hidden min-h-0">
         {/* Grid bg overlay */}
         <div
-          className="fixed inset-0 pointer-events-none opacity-40"
+          className="fixed inset-0 pointer-events-none opacity-40 z-0"
           style={{
             backgroundImage: "var(--tw-gradient-stops)",
             background:
@@ -111,7 +161,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             backgroundSize: "40px 40px",
           }}
         />
-        <div className="relative z-10 p-8 max-w-6xl mx-auto">
+        <div className="relative z-10 p-4 md:p-8 max-w-6xl mx-auto w-full">
           <div className="mb-6 flex justify-end">
             <KeelStackPoweredBadge />
           </div>
@@ -123,6 +173,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 }
 
 // ─── Inline SVG icons ────────────────────────────────────────────────────────
+
+function MenuIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+    </svg>
+  );
+}
+
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+}
 
 function GridIcon({ className }: { className?: string }) {
   return (

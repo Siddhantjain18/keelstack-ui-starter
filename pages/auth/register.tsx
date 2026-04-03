@@ -5,13 +5,18 @@ import { KeelStackBrandLink, KeelStackPoweredBadge } from "../../components/Keel
 import { authApi, extractApiError, getAuthErrorMessage } from "../../lib/api-client";
 
 export default function RegisterPage() {
-  const [email, setEmail] = useState("");
+  const [email, setEmail]    = useState("");
   const [password, setPassword] = useState("");
-  const [enableMfa, setEnableMfa] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError]       = useState("");
   const [errorCode, setErrorCode] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [done, setDone]         = useState(false);
+
+  // For dev mode email verification testing
+  const [verifyToken, setVerifyToken] = useState<string | undefined>();
+  const [resending, setResending]     = useState(false);
+
+  const googleAuthUrl = authApi.getOAuthStartUrl("google");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -19,7 +24,9 @@ export default function RegisterPage() {
     setErrorCode(null);
     setLoading(true);
     try {
-      await authApi.register(email, password, enableMfa);
+      // Best practice: don't force MFA during registration.
+      // Users can enable it in /auth/mfa after they sign in.
+      await authApi.register(email, password, false);
       setDone(true);
     } catch (err) {
       const apiError = extractApiError(err);
@@ -29,6 +36,20 @@ export default function RegisterPage() {
       setErrorCode(apiError.statusCode ?? null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    setResending(true);
+    try {
+      const res = await authApi.requestEmailVerification(email);
+      if (res.tokenPreview) {
+        setVerifyToken(res.tokenPreview);
+      }
+    } catch (err) {
+      // subtle fail — don't crash the success screen
+    } finally {
+      setResending(false);
     }
   }
 
@@ -63,13 +84,36 @@ export default function RegisterPage() {
               </div>
               <h2 className="font-display font-bold text-lg text-fg mb-2">Account created</h2>
               <p className="text-sm text-fg-muted mb-6">
-                Check your email to verify your address.
+                Please check your email to verify your address before signing in.
               </p>
+
+              {verifyToken ? (
+                <div className="mb-6 p-3 rounded-lg bg-accent/10 border border-accent/20 text-left">
+                  <p className="text-[10px] uppercase tracking-wider text-accent font-bold mb-1.5">
+                    Dev Mode — Verification Link
+                  </p>
+                  <Link
+                    href={`/auth/email-verification?token=${verifyToken}`}
+                    className="text-xs font-mono text-fg break-all hover:underline"
+                  >
+                    /auth/email-verification?token={verifyToken}
+                  </Link>
+                </div>
+              ) : (
+                <button
+                  onClick={handleResendVerification}
+                  disabled={resending}
+                  className="mb-8 text-xs text-accent hover:underline disabled:text-muted disabled:no-underline"
+                >
+                  {resending ? "Requesting link…" : "Didn't receive an email? Resend verification"}
+                </button>
+              )}
+
               <Link
                 href="/auth/login"
-                className="inline-flex items-center gap-2 bg-accent hover:bg-accent-dim text-white font-medium py-2.5 px-6 rounded-lg text-sm transition-colors"
+                className="w-full inline-flex items-center justify-center gap-2 bg-accent hover:bg-accent-dim text-white font-medium py-2.5 px-6 rounded-lg text-sm transition-colors"
               >
-                Sign in
+                Go to Sign in
               </Link>
             </div>
           ) : (
@@ -121,22 +165,6 @@ export default function RegisterPage() {
                   />
                 </div>
 
-                <label className="flex items-center gap-3 cursor-pointer select-none group">
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={enableMfa}
-                      onChange={(e) => setEnableMfa(e.target.checked)}
-                    />
-                    <div className="w-9 h-5 bg-border rounded-full peer-checked:bg-accent transition-colors" />
-                    <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-fg-muted rounded-full peer-checked:translate-x-4 peer-checked:bg-white transition-all" />
-                  </div>
-                  <span className="text-sm text-fg-muted group-hover:text-fg transition-colors">
-                    Enable MFA
-                  </span>
-                </label>
-
                 {error && (
                   <div className="rounded-lg bg-danger/10 border border-danger/30 px-3.5 py-2.5 text-sm text-danger">
                     <p>{error}</p>
@@ -162,6 +190,24 @@ export default function RegisterPage() {
                 </button>
               </form>
 
+              <div className="my-4 flex items-center gap-3">
+                <div className="h-px flex-1 bg-border" />
+                <span className="text-[11px] uppercase tracking-wider text-fg-muted">
+                  or continue with
+                </span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+
+              <div className="space-y-2.5">
+                <a
+                  href={googleAuthUrl}
+                  className="w-full inline-flex items-center justify-center gap-2.5 rounded-lg border border-border bg-bg px-3.5 py-2.5 text-sm text-fg hover:border-accent/40 transition-colors"
+                >
+                  <GoogleIcon />
+                  Sign up with Google
+                </a>
+              </div>
+
               <p className="mt-5 text-center text-xs text-fg-muted">
                 Already have an account?{" "}
                 <Link href="/auth/login" className="text-accent hover:underline">
@@ -173,5 +219,16 @@ export default function RegisterPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#EA4335"
+        d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.8-6-6.2s2.7-6.2 6-6.2c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.8 2.9 14.6 2 12 2 6.9 2 2.8 6.3 2.8 11.8S6.9 21.6 12 21.6c6.9 0 9.1-4.9 9.1-7.4 0-.5 0-.9-.1-1.2H12z"
+      />
+    </svg>
   );
 }
