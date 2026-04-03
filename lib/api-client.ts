@@ -107,6 +107,7 @@ export interface KSMfaVerifyResponse {
 export interface KSOAuthCallbackSession {
   sessionToken: string;
   refreshToken: string;
+  userId?: string;
   user?: { id: string; email: string; mfaEnabled: boolean };
 }
 
@@ -212,6 +213,9 @@ function storeMfaSession(res: KSMfaVerifyResponse): void {
 
 function storeOAuthSession(payload: KSOAuthCallbackSession): void {
   tokenStore.setOAuthSession(payload.sessionToken, payload.refreshToken);
+  if (payload.userId) {
+    tokenStore.setTenantId(payload.userId);
+  }
   if (payload.user) {
     tokenStore.setTenantId(payload.user.id);
     tokenStore.setUser({ ...payload.user });

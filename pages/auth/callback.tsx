@@ -11,11 +11,13 @@ export default function OAuthCallbackPage() {
   const params = useMemo(() => {
     const tokenParam = router.query.sessionToken;
     const refreshParam = router.query.refreshToken;
+    const userIdParam = router.query.userId;
     const isNewUserParam = router.query.isNewUser;
 
     return {
       sessionToken: typeof tokenParam === "string" ? tokenParam : "",
       refreshToken: typeof refreshParam === "string" ? refreshParam : "",
+      userId: typeof userIdParam === "string" ? userIdParam : "",
       isNewUser: isNewUserParam === "true",
     };
   }, [router.query]);
@@ -23,15 +25,17 @@ export default function OAuthCallbackPage() {
   useEffect(() => {
     if (!router.isReady) return;
 
-    if (!params.sessionToken || !params.refreshToken) {
-      setError("OAuth callback is missing required session data.");
+    if (!params.sessionToken || !params.refreshToken || !params.userId) {
+      setError("OAuth callback is missing required session or identity data.");
       return;
     }
 
     try {
+      // Complete the session using the tokens and userId returned by the backend
       authApi.completeOAuthSession({
         sessionToken: params.sessionToken,
         refreshToken: params.refreshToken,
+        userId: params.userId,
       });
 
       const destination = params.isNewUser ? "/auth/mfa?welcome=1" : "/auth/mfa";
