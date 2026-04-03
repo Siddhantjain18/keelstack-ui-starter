@@ -50,11 +50,20 @@ export default function BillingPage() {
 
   const createMut = useMutation({
     mutationFn: async () => {
-      // Use the stored tenantId — set by storeSession() on login, mirrors x-tenant-id header
-      const tenantId = tokenStore.getTenantId() ?? user?.id ?? "demo-tenant";
+      // FIX: Prioritize user?.id from AuthContext over tokenStore.getTenantId().
+      // The error "Tenant mismatch in payload" happens when the body tenantId
+      // doesn't match the session user ID. Falling back to "demo-tenant" 
+      // while authenticated causes this mismatch.
+      const tenantId = user?.id ?? tokenStore.getTenantId();
+      
+      if (!tenantId) {
+        throw new Error("User identity missing. Please sign in again.");
+      }
+
       const customerEmail = user?.email ?? "demo@example.com";
       const key = `ks-ui-${tenantId}-${selectedPlan}-${Date.now()}`;
       setLastIdempotencyKey(key);
+      
       return billingApi.createSubscription({
         tenantId,
         customerEmail,
@@ -68,7 +77,10 @@ export default function BillingPage() {
       setError("");
       qc.invalidateQueries({ queryKey: ["billing", "current"] });
     },
-    onError: (err) => setError(extractApiError(err).message),
+    onError: (err) => {
+      const msg = extractApiError(err).message;
+      setError(msg);
+    },
   });
 
   const mockWebhookMut = useMutation({
