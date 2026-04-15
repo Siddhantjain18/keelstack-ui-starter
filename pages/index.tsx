@@ -23,8 +23,9 @@ export default function OverviewPage() {
   });
 
   const { data: healthData } = useQuery({
-    queryKey: ["health"],
+    queryKey: ["health-summary"],
     queryFn: async () => {
+      // Parallel execution with individual timeout/retry logic handled by healthApi
       const [auth, billing, users, v2] = await Promise.allSettled([
         healthApi.auth(),
         healthApi.billing(),
@@ -39,6 +40,8 @@ export default function OverviewPage() {
       };
     },
     refetchInterval: 30_000,
+    retry: 3,
+    retryDelay: 2000,
   });
 
   if (isLoading) return null;
