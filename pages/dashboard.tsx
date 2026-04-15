@@ -9,9 +9,13 @@ export default function DashboardPage() {
     { name: "Auth Service", query: useQuery({ queryKey: ["health", "auth"], queryFn: () => healthApi.auth(), refetchInterval: 5000 }) },
     { name: "Billing Service", query: useQuery({ queryKey: ["health", "billing"], queryFn: () => healthApi.billing(), refetchInterval: 5000 }) },
     { name: "User Service", query: useQuery({ queryKey: ["health", "users"], queryFn: () => healthApi.users(), refetchInterval: 5000 }) },
-    { name: "LLM Service", query: useQuery({ queryKey: ["health", "llm"], queryFn: () => healthApi.llm(), refetchInterval: 5000 }) },
-    { name: "API v2 (Core)", query: useQuery({ queryKey: ["health", "v2"], queryFn: () => healthApi.v2(), refetchInterval: 5000 }) },
+    { name: "LLM Service", query: useQuery({ queryKey: ["health", "llm"], queryFn: () => healthApi.llm(), refetchInterval: 10000 }) },
+    { name: "API v2 (Core)", query: useQuery({ queryKey: ["health", "v2"], queryFn: () => healthApi.v2(), refetchInterval: 10000 }) },
   ];
+
+  const anyPending = healthChecks.some(s => s.query.isPending);
+  const anyDown = healthChecks.some(s => s.query.isError);
+  const allUp = healthChecks.every(s => s.query.isSuccess && s.query.data?.data?.status === "ok");
 
   return (
     <Layout>
@@ -23,10 +27,19 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-3xl font-display font-bold text-fg mb-2">System Status</h1>
           <p className="text-fg-muted leading-relaxed">
-            Real-time health monitoring of KeelStack engine modules. These checks verify 
-            database connectivity, Redis availability, and downstream API configuration.
+            Real-time health monitoring of KeelStack engine modules. 
           </p>
         </div>
+
+        {anyPending && !anyDown && (
+          <div className="rounded-xl border border-warning/30 bg-warning/5 p-4 flex items-center gap-4 animate-pulse">
+            <div className="w-5 h-5 border-2 border-warning border-t-transparent rounded-full animate-spin" />
+            <div>
+              <p className="text-sm font-medium text-warning">Engine is waking up...</p>
+              <p className="text-[10px] text-warning/70">The backend uses Render Free Tier. It takes ~30s to spin up on the first request.</p>
+            </div>
+          </div>
+        )}
 
         <div className="grid gap-4 md:grid-cols-2">
           {healthChecks.map((service) => {

@@ -700,9 +700,11 @@ export const usersApi = {
 // ─── Health ───────────────────────────────────────────────────────────────────
 
 export const healthApi = {
-  auth:    () => http.get("/api/v1/auth/health"),
-  billing: () => http.get("/api/v1/billing/health"),
-  users:   () => http.get("/api/v1/users/health"),
-  llm:     () => http.get("/api/v1/llm/health"),
-  v2:      () => http.get("/api/v2/health"),
+  // Use a longer timeout for health checks to handle Render cold starts (up to 45s)
+  auth:    () => http.get("/api/v1/auth/health", { timeout: 45_000 }),
+  billing: () => http.get("/api/v1/billing/health", { timeout: 45_000 }),
+  users:   () => http.get("/api/v1/users/health", { timeout: 45_000 }),
+  llm:     () => http.get("/api/v1/llm/health", { timeout: 45_000 }),
+  v2:      () => http.get("/api/v2/health", { timeout: 45_000 }),
+  wakeUp:  () => http.get("/api/v1/health/wake-up"),
 };

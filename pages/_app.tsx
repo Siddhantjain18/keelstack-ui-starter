@@ -5,6 +5,8 @@ import { Analytics } from "@vercel/analytics/next"
 import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Toaster } from "react-hot-toast";
 import "../styles/globals.css";
+import { healthApi } from "../lib/api-client";
+import { useEffect } from "react";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -13,6 +15,13 @@ const queryClient = new QueryClient({
 });
 
 export default function App({ Component, pageProps }: AppProps) {
+  // Global pre-warmup for Render free tier.
+  // Firing a ping on mount starts the cold start process immediately.
+  useEffect(() => {
+    // Silence errors to keep it invisible to the user
+    healthApi.auth().catch(() => {});
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
