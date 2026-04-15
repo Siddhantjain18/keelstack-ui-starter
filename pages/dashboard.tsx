@@ -6,16 +6,17 @@ import clsx from "clsx";
 
 export default function DashboardPage() {
   const healthChecks = [
-    { name: "Auth Service", query: useQuery({ queryKey: ["health", "auth"], queryFn: () => healthApi.auth(), refetchInterval: 5000 }) },
-    { name: "Billing Service", query: useQuery({ queryKey: ["health", "billing"], queryFn: () => healthApi.billing(), refetchInterval: 5000 }) },
-    { name: "User Service", query: useQuery({ queryKey: ["health", "users"], queryFn: () => healthApi.users(), refetchInterval: 5000 }) },
-    { name: "LLM Service", query: useQuery({ queryKey: ["health", "llm"], queryFn: () => healthApi.llm(), refetchInterval: 10000 }) },
-    { name: "API v2 (Core)", query: useQuery({ queryKey: ["health", "v2"], queryFn: () => healthApi.v2(), refetchInterval: 10000 }) },
+    { name: "Auth Service", query: useQuery({ queryKey: ["health", "auth"], queryFn: () => healthApi.auth(), refetchInterval: 15000, retry: 5, retryDelay: 2000 }) },
+    { name: "Billing Service", query: useQuery({ queryKey: ["health", "billing"], queryFn: () => healthApi.billing(), refetchInterval: 15000, retry: 5, retryDelay: 2000 }) },
+    { name: "User Service", query: useQuery({ queryKey: ["health", "users"], queryFn: () => healthApi.users(), refetchInterval: 15000, retry: 5, retryDelay: 2000 }) },
+    { name: "LLM Service", query: useQuery({ queryKey: ["health", "llm"], queryFn: () => healthApi.llm(), refetchInterval: 15000, retry: 5, retryDelay: 2000 }) },
+    { name: "API v2 (Core)", query: useQuery({ queryKey: ["health", "v2"], queryFn: () => healthApi.v2(), refetchInterval: 15000, retry: 5, retryDelay: 2000 }) },
   ];
 
-  const anyPending = healthChecks.some(s => s.query.isPending);
-  const anyDown = healthChecks.some(s => s.query.isError);
+  const anyFetching = healthChecks.some(s => s.query.isFetching);
   const allUp = healthChecks.every(s => s.query.isSuccess && s.query.data?.data?.status === "ok");
+  const anyDown = healthChecks.some(s => s.query.isError && !s.query.isFetching);
+  const isWakingUp = anyFetching && !allUp && !anyDown;
 
   return (
     <Layout>
@@ -31,12 +32,22 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {anyPending && !anyDown && (
+        {isWakingUp && (
           <div className="rounded-xl border border-warning/30 bg-warning/5 p-4 flex items-center gap-4 animate-pulse">
             <div className="w-5 h-5 border-2 border-warning border-t-transparent rounded-full animate-spin" />
             <div>
-              <p className="text-sm font-medium text-warning">Engine is waking up...</p>
-              <p className="text-[10px] text-warning/70">The backend uses Render Free Tier. It takes ~30s to spin up on the first request.</p>
+              <p className="text-sm font-medium text-warning">Connecting to Engine...</p>
+              <p className="text-[10px] text-warning/70">Services are spinning up after inactivity. This cold start is normal on free-tier hosting.</p>
+            </div>
+          </div>
+        )}
+
+        {anyDown && (
+          <div className="rounded-xl border border-danger/30 bg-danger/5 p-4 flex items-center gap-4">
+            <div className="w-5 h-5 rounded-full bg-danger/20 flex items-center justify-center text-danger font-bold text-xs">!</div>
+            <div>
+              <p className="text-sm font-medium text-danger">Engine Disconnected</p>
+              <p className="text-[10px] text-danger/70">One or more services stopped responding. Check dashboard logs below for details.</p>
             </div>
           </div>
         )}
