@@ -79,25 +79,29 @@ export default function OverviewPage() {
             label="Current Plan"
             value={plan.toUpperCase()}
             valueClass={PLAN_COLORS[plan as SubscriptionPlan] ?? "text-fg"}
-            sub={isAuthenticated ? sub?.subscription?.provider ?? "—" : "public demo tenant"}
+            sub={isAuthenticated ? `via ${sub?.subscription?.provider ?? "engine"}` : "public demo tenant"}
           />
           <StatCard
-            label={isAuthenticated ? "Role" : "Mode"}
+            label={isAuthenticated ? "User Role" : "Demo Mode"}
             value={isAuthenticated ? user?.role?.toUpperCase() ?? "—" : "PUBLIC"}
             valueClass="text-fg"
-            sub={isAuthenticated ? "user role" : "no sign-in required"}
+            sub={isAuthenticated ? "backend permissions" : "read/write allowed"}
           />
           <StatCard
-            label={isAuthenticated ? "MFA" : "Auth Demo"}
-            value={isAuthenticated ? (user?.mfaEnabled ? "ENABLED" : "DISABLED") : "READY"}
+            label="Account Security"
+            value={isAuthenticated ? (user?.mfaEnabled ? "SECURE" : "UNPROTECTED") : "READY"}
             valueClass={isAuthenticated ? (user?.mfaEnabled ? "text-success" : "text-warning") : "text-accent"}
-            sub={isAuthenticated ? "multi-factor auth" : "register, login, MFA"}
+            sub={
+              isAuthenticated 
+                ? `${user?.emailVerified ? "Verified Identity" : "Unverified Identity"}${user?.mfaEnabled ? " + MFA" : ""}`
+                : "Register → Login → MFA"
+            }
           />
           <StatCard
-            label={isAuthenticated ? "Email" : "Entry Point"}
-            value={isAuthenticated ? (user?.emailVerified ? "VERIFIED" : "UNVERIFIED") : "OPEN"}
-            valueClass={isAuthenticated ? (user?.emailVerified ? "text-success" : "text-warning") : "text-success"}
-            sub={isAuthenticated ? user?.email ?? "—" : "core product first"}
+            label="Active Identity"
+            value={isAuthenticated ? (user?.email?.split("@")[0].toUpperCase() ?? "—") : "GUEST"}
+            valueClass="text-fg"
+            sub={isAuthenticated ? user?.email ?? "—" : "login to track usage"}
           />
         </div>
 
