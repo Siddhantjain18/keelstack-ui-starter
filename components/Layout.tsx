@@ -11,6 +11,7 @@ import {
 
 const NAV_ITEMS = [
   { href: "/", label: "Overview", icon: GridIcon },
+  { href: "/dashboard", label: "System Status", icon: DashboardIcon },
   { href: "/auth-demo", label: "Auth Demo", icon: AuthDemoIcon },
   { href: "/auth/mfa", label: "MFA Settings", icon: ShieldIcon },
   { href: "/billing", label: "Billing", icon: BillingIcon },
@@ -242,6 +243,14 @@ function ShieldIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m6 2.25c0 5.385-3.435 8.99-8.25 10.5C7.935 20.99 4.5 17.385 4.5 12V5.742a2.25 2.25 0 011.606-2.157l5.144-1.714a2.25 2.25 0 011.5 0l5.144 1.714A2.25 2.25 0 0119.5 5.742V12z" />
+    </svg>
+  );
+}
+
+function DashboardIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0V3.75m0 9.75h7.5" />
     </svg>
   );
 }

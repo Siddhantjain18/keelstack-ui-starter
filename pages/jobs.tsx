@@ -1,10 +1,11 @@
 import Head from "next/head";
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import Layout from "../components/Layout";
 import { useAuth } from "../lib/auth-context";
-import { tasksApi, extractApiError, type TaskType, type KSTask } from "../lib/api-client";
+import { tasksApi, adminApi, extractApiError, type TaskType, type KSTask } from "../lib/api-client";
+import toast from "react-hot-toast";
 import clsx from "clsx";
 
 type TrackedJob = {
@@ -44,8 +45,16 @@ export default function JobsPage() {
 
   const [selectedType, setSelectedType] = useState<TaskType>("report");
   const [jobs, setJobs] = useState<TrackedJob[]>([]);
+  const [simulateFailures, setSimulateFailures] = useState(false);
   const [error, setError] = useState("");
   const pollingRefs = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+
+  const { data: dlqData, refetch: refetchDLQ } = useQuery({
+    queryKey: ["jobs", "dlq"],
+    queryFn: () => adminApi.getDLQ(),
+    enabled: isAuthenticated,
+    refetchInterval: 10_000,
+  });
 
   // Cleanup intervals on unmount
   useEffect(() => {
@@ -87,8 +96,10 @@ export default function JobsPage() {
       tasksApi.submit(
         selectedType,
         { demoKey: "demoValue", submittedFrom: "keelstack-ui-starter" },
+        simulateFailures ? 3 : 0 // 3 is MAX_TASK_ATTEMPTS in engine
       ),
     onSuccess: (data) => {
+      toast.success("Task accepted for background processing.");
       const job: TrackedJob = {
         jobId: data.jobId,
         type: selectedType,
@@ -183,17 +194,33 @@ export default function JobsPage() {
             </div>
           )}
 
-          <button
-            onClick={() => submitMut.mutate()}
-            disabled={submitMut.isPending || isReadOnlyDemo}
-            className="bg-warning/90 hover:bg-warning text-bg font-medium px-5 py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
-          >
-            {isReadOnlyDemo
-              ? "Sign in to submit tasks"
-              : submitMut.isPending
-              ? "Submitting…"
-              : `POST /api/v1/tasks → ${selectedType}`}
-          </button>
+          <div className="flex flex-col md:flex-row md:items-center gap-4">
+            <button
+              onClick={() => submitMut.mutate()}
+              disabled={submitMut.isPending || isReadOnlyDemo}
+              className="bg-warning/90 hover:bg-warning text-bg font-medium px-5 py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+            >
+              {isReadOnlyDemo
+                ? "Sign in to submit tasks"
+                : submitMut.isPending
+                ? "Submitting…"
+                : `POST /api/v1/tasks → ${selectedType}`}
+            </button>
+
+            {!isReadOnlyDemo && (
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={simulateFailures} 
+                  onChange={(e) => setSimulateFailures(e.target.checked)}
+                  className="w-4 h-4 rounded border-border bg-bg text-warning focus:ring-warning accent-warning"
+                />
+                <span className="text-xs text-fg-muted group-hover:text-fg transition-colors">
+                  Simulate transient failures (3 retries then DLQ)
+                </span>
+              </label>
+            )}
+          </div>
         </div>
 
         {/* Job list */}
@@ -251,6 +278,55 @@ export default function JobsPage() {
             queued → processing → done | failed (→ requeue after backoff)
           </p>
         </div>
+
+        {/* DLQ Viewer */}
+        {isAuthenticated && (
+          <div className="rounded-xl border border-danger/20 p-6" style={{ background: "var(--surface)" }}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono px-2 py-0.5 rounded border bg-danger/10 text-danger border-danger/20">
+                  Dead-Letter Queue
+                </span>
+                <h3 className="font-display font-semibold text-sm text-fg">DLQ Inspection</h3>
+              </div>
+              <button 
+                onClick={() => refetchDLQ()}
+                className="text-[10px] uppercase tracking-wider text-fg-muted hover:text-accent font-mono"
+              >
+                Refresh
+              </button>
+            </div>
+            
+            <p className="text-xs text-fg-muted mb-4 leading-relaxed">
+              When a job exceeds its retry budget (e.g. 3 attempts), it is moved from primary processing 
+              to the <code className="font-mono text-danger text-xs">DeadLetterQueue</code>. Engineers 
+              use this view to inspect payloads and stack traces before manually re-triggering or purging.
+            </p>
+
+            {(dlqData?.jobs?.length ?? 0) === 0 ? (
+              <div className="rounded-lg border border-dashed border-border py-8 text-center">
+                <p className="text-xs text-muted">DLQ is currently empty.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {dlqData?.jobs.map((job: any) => (
+                  <div key={job.id} className="rounded-lg border border-border bg-bg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-mono text-[10px] text-fg truncate max-w-[150px]">{job.id}</span>
+                      <span className="font-mono text-[10px] text-danger">{job.reason}</span>
+                    </div>
+                    <p className="text-[10px] text-fg-muted leading-relaxed truncate">
+                      {JSON.stringify(job.payload)}
+                    </p>
+                    <p className="text-[10px] text-muted mt-1 font-mono">
+                      Failed at {new Date(job.failedAt).toLocaleString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </Layout>
   );

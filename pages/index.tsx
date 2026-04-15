@@ -106,9 +106,14 @@ export default function OverviewPage() {
           className="rounded-xl border border-border p-6 mb-6"
           style={{ background: "var(--surface)" }}
         >
-          <h2 className="font-display font-semibold text-sm text-fg mb-4 uppercase tracking-wider">
-            Engine Module Status
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-display font-semibold text-sm text-fg uppercase tracking-wider">
+              Engine Module Status
+            </h2>
+            <Link href="/dashboard" className="text-[10px] text-accent font-mono hover:underline">
+              View Detailed Metrics →
+            </Link>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {modules.map(({ name, ok }) => (
               <div

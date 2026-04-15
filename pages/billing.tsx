@@ -38,6 +38,7 @@ export default function BillingPage() {
   const [selectedProvider, setSelectedProvider] = useState<BillingProvider>("stripe");
   const [lastResponse, setLastResponse] = useState<Record<string, unknown> | null>(null);
   const [lastIdempotencyKey, setLastIdempotencyKey] = useState<string>("");
+  const [reuseKey, setReuseKey] = useState(false);
   const [mockWebhookData, setMockWebhookData] = useState<KSMockWebhookEnvelope | null>(null);
   const [error, setError] = useState("");
 
@@ -61,16 +62,26 @@ export default function BillingPage() {
       }
 
       const customerEmail = user?.email ?? "demo@example.com";
-      const key = `ks-ui-${tenantId}-${selectedPlan}-${Date.now()}`;
+      const key = reuseKey && lastIdempotencyKey 
+        ? lastIdempotencyKey 
+        : `ks-ui-${tenantId}-${selectedPlan}-${Date.now()}`;
+      
       setLastIdempotencyKey(key);
       
-      return billingApi.createSubscription({
+      const res = await billingApi.createSubscription({
         tenantId,
         customerEmail,
         provider: selectedProvider,
         plan: selectedPlan,
         idempotencyKey: key,
       });
+
+      if ((res as any).duplicate) {
+        import("react-hot-toast").then((t) => t.default.success("Duplicate request! Returns original response."));
+      } else {
+        import("react-hot-toast").then((t) => t.default.success("Subscription updated successfully."));
+      }
+      return res;
     },
     onSuccess: (data) => {
       setLastResponse(data as Record<string, unknown>);
@@ -211,17 +222,33 @@ export default function BillingPage() {
             </div>
           )}
 
-          <button
-            onClick={() => createMut.mutate()}
-            disabled={createMut.isPending || !isAuthenticated}
-            className="bg-accent hover:bg-accent-dim text-white font-medium px-5 py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
-          >
-            {!isAuthenticated
-              ? "Create / Upgrade Subscription via Auth Demo"
-              : createMut.isPending
-              ? "Creating…"
-              : "Create / Upgrade Subscription"}
-          </button>
+          <div className="flex flex-col md:flex-row md:items-center gap-4">
+            <button
+              onClick={() => createMut.mutate()}
+              disabled={createMut.isPending || !isAuthenticated}
+              className="bg-accent hover:bg-accent-dim text-white font-medium px-5 py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+            >
+              {!isAuthenticated
+                ? "Create / Upgrade Subscription via Auth Demo"
+                : createMut.isPending
+                ? "Creating…"
+                : "Create / Upgrade Subscription"}
+            </button>
+
+            {isAuthenticated && lastIdempotencyKey && (
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={reuseKey} 
+                  onChange={(e) => setReuseKey(e.target.checked)}
+                  className="w-4 h-4 rounded border-border bg-bg text-accent focus:ring-accent accent-accent"
+                />
+                <span className="text-xs text-fg-muted group-hover:text-fg transition-colors">
+                  Reuse last key: <code className="text-[10px] bg-bg px-1 rounded">{lastIdempotencyKey.slice(-8)}...</code>
+                </span>
+              </label>
+            )}
+          </div>
         </div>
 
         {/* Idempotency explainer — fires after any create attempt */}

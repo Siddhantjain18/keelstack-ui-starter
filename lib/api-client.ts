@@ -633,12 +633,17 @@ export const tasksApi = {
    */
   submit: async (
     type: TaskType,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
+    simulateRetryCount?: number
   ): Promise<{ jobId: string; pollUrl: string; status: string }> => {
     const userId = tokenStore.getUser()?.id ?? "demo-user";
+    const finalPayload = { ...payload };
+    if (simulateRetryCount !== undefined) {
+      finalPayload["simulateRetryCount"] = simulateRetryCount;
+    }
     const { data } = await http.post(
       "/api/v1/tasks",
-      { type, payload },
+      { type, payload: finalPayload },
       { headers: { "x-user-id": userId } }
     );
     return data;
@@ -663,6 +668,18 @@ export const llmApi = {
   },
   getHealth: async () => {
     const { data } = await http.get("/api/v1/llm/health");
+    return data;
+  },
+};
+
+// ─── Admin API ────────────────────────────────────────────────────────────────
+
+export const adminApi = {
+  getDLQ: async (limit = 20): Promise<{ jobs: any[]; pagination: any }> => {
+    const { data } = await http.get("/api/v1/admin/jobs/dlq", {
+      params: { limit },
+      headers: { "x-admin-api-key": "demo-admin-key" }, // Matches engine .env expectation
+    });
     return data;
   },
 };

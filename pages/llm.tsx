@@ -5,6 +5,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import Layout from "../components/Layout";
 import { useAuth } from "../lib/auth-context";
 import { tasksApi, llmApi, extractApiError } from "../lib/api-client";
+import toast from "react-hot-toast";
 
 type CallLogEntry = {
   id: string;
@@ -62,7 +63,34 @@ export default function LLMPage() {
         window.setTimeout(() => void refetchBudget(), 6_000);
       }
     },
-    onError: (err) => setError(extractApiError(err).message),
+    onError: (err) => {
+      const e = extractApiError(err);
+      setError(e.message);
+      if (e.statusCode === 429) {
+        toast.error("LLM Budget Exceeded! Check the meter above.", { duration: 5000 });
+      } else {
+        toast.error("AI Task failed.");
+      }
+    },
+  });
+
+  const stressTestMut = useMutation({
+    mutationFn: async () => {
+      const promises = [];
+      for (let i = 0; i < 5; i++) {
+        promises.push(tasksApi.submit("ai_analysis", { prompt: `Stress test request ${i}` }));
+      }
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      toast.success("5 stress test tasks submitted!");
+      void refetchBudget();
+    },
+    onError: (err) => {
+      const e = extractApiError(err);
+      setError(e.message);
+      toast.error(`Stress test hit a boundary: ${e.message}`);
+    },
   });
 
   if (isLoading) return null;
@@ -307,13 +335,23 @@ export default function LLMPage() {
               </p>
             </div>
           ) : (
-            <button
-              onClick={() => submitMut.mutate()}
-              disabled={submitMut.isPending || !prompt.trim()}
-              className="bg-accent hover:bg-accent-dim text-white font-medium px-5 py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
-            >
-              {submitMut.isPending ? "Submitting…" : "Submit ai_analysis task"}
-            </button>
+            <div className="flex flex-col md:flex-row md:items-center gap-4">
+              <button
+                onClick={() => submitMut.mutate()}
+                disabled={submitMut.isPending || !prompt.trim()}
+                className="bg-accent hover:bg-accent-dim text-white font-medium px-5 py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+              >
+                {submitMut.isPending ? "Submitting…" : "Submit ai_analysis task"}
+              </button>
+
+              <button
+                onClick={() => stressTestMut.mutate()}
+                disabled={stressTestMut.isPending}
+                className="border border-accent text-accent hover:bg-accent/5 font-medium px-5 py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+              >
+                {stressTestMut.isPending ? "Stressing…" : "Stress Test (5 requests)"}
+              </button>
+            </div>
           )}
         </div>
 
