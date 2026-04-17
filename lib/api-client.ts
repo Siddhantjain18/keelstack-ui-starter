@@ -170,30 +170,56 @@ const SESSION_KEY = "ks_session_token";
 const REFRESH_KEY = "ks_refresh_token";
 const TENANT_KEY  = "ks_tenant_id";
 const USER_KEY    = "ks_user";
+const AUTH_CHANGED_EVENT = "ks-auth-changed";
+
+function emitAuthChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
+}
 
 export const tokenStore = {
   getSession:  (): string | null =>
     typeof window !== "undefined" ? localStorage.getItem(SESSION_KEY) : null,
-  setSession:  (t: string) => localStorage.setItem(SESSION_KEY, t),
+  setSession:  (t: string) => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(SESSION_KEY, t);
+    emitAuthChanged();
+  },
   getRefresh:  (): string | null =>
     typeof window !== "undefined" ? localStorage.getItem(REFRESH_KEY) : null,
-  setRefresh:  (t: string) => localStorage.setItem(REFRESH_KEY, t),
+  setRefresh:  (t: string) => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(REFRESH_KEY, t);
+    emitAuthChanged();
+  },
   getTenantId: (): string | null =>
     typeof window !== "undefined" ? localStorage.getItem(TENANT_KEY) : null,
-  setTenantId: (id: string) => localStorage.setItem(TENANT_KEY, id),
+  setTenantId: (id: string) => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(TENANT_KEY, id);
+    emitAuthChanged();
+  },
   getUser: (): KSUser | null => {
     if (typeof window === "undefined") return null;
     try { return JSON.parse(localStorage.getItem(USER_KEY) ?? "null"); } catch { return null; }
   },
-  setUser: (u: KSUser) => localStorage.setItem(USER_KEY, JSON.stringify(u)),
+  setUser: (u: KSUser) => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(USER_KEY, JSON.stringify(u));
+    emitAuthChanged();
+  },
   setOAuthSession: (sessionToken: string, refreshToken: string) => {
+    if (typeof window === "undefined") return;
     localStorage.setItem(SESSION_KEY, sessionToken);
     localStorage.setItem(REFRESH_KEY, refreshToken);
+    emitAuthChanged();
   },
   clear: () => {
+    if (typeof window === "undefined") return;
     [SESSION_KEY, REFRESH_KEY, TENANT_KEY, USER_KEY].forEach((k) =>
       localStorage.removeItem(k)
     );
+    emitAuthChanged();
   },
 };
 
@@ -261,6 +287,9 @@ function createClient(): AxiosInstance {
       ? (process.env.KEELSTACK_API_URL ?? "http://localhost:3000")
       : "";
 
+  const redirectOnUnauthorized =
+    (process.env.NEXT_PUBLIC_AUTH_REDIRECT_ON_401 ?? "").toLowerCase() === "true";
+
   const client = axios.create({
     baseURL,
     timeout: 15_000,
@@ -295,7 +324,9 @@ function createClient(): AxiosInstance {
         const refreshToken = tokenStore.getRefresh();
         if (!refreshToken) {
           tokenStore.clear();
-          if (typeof window !== "undefined") window.location.href = "/auth/login";
+          if (redirectOnUnauthorized && typeof window !== "undefined") {
+            window.location.href = "/auth/login";
+          }
           return Promise.reject(err);
         }
 
@@ -326,7 +357,9 @@ function createClient(): AxiosInstance {
           return client(original!);
         } catch {
           tokenStore.clear();
-          if (typeof window !== "undefined") window.location.href = "/auth/login";
+          if (redirectOnUnauthorized && typeof window !== "undefined") {
+            window.location.href = "/auth/login";
+          }
           return Promise.reject(err);
         } finally {
           isRefreshing = false;

@@ -386,11 +386,11 @@ export default function OverviewPage() {
         {/* Quick links */}
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-accent">Next steps</p>
-            <h2 className="font-display text-lg font-bold text-fg">Send visitors where the engine becomes obvious</h2>
+            <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-accent">Explore the demo</p>
+            <h2 className="font-display text-lg font-bold text-fg">Open the core workflows</h2>
           </div>
           <p className="hidden md:block text-xs text-fg-muted max-w-sm text-right">
-            These routes show the parts of the product that usually close the sale: billing, jobs, and AI control.
+            Billing, background jobs, and AI usage—each page maps directly to an engine module.
           </p>
         </div>
         <div className="grid md:grid-cols-3 gap-4">

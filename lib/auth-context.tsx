@@ -22,14 +22,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [hasSession, setHasSession]    = useState(false);
   const [isLoading, setIsLoading]      = useState(true);
 
-  useEffect(() => {
-    // Restore from storage on mount
+  const syncFromStorage = useCallback(() => {
     const storedUser    = tokenStore.getUser();
     const storedSession = tokenStore.getSession();
-    if (storedUser)    setUserState(storedUser);
-    if (storedSession) setHasSession(true);
-    setIsLoading(false);
+    setUserState(storedUser);
+    setHasSession(!!storedSession);
   }, []);
+
+  useEffect(() => {
+    // Restore from storage on mount
+    syncFromStorage();
+    setIsLoading(false);
+  }, [syncFromStorage]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const onAuthChanged = () => syncFromStorage();
+    const onStorage = () => syncFromStorage();
+
+    window.addEventListener("ks-auth-changed", onAuthChanged);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("ks-auth-changed", onAuthChanged);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [syncFromStorage]);
 
   const setUser = useCallback((u: KSUser | null) => {
     setUserState(u);
