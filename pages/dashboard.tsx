@@ -3,20 +3,51 @@ import { useQuery } from "@tanstack/react-query";
 import Layout from "../components/Layout";
 import { healthApi, extractApiError } from "../lib/api-client";
 import clsx from "clsx";
+import { useEffect, useState } from "react";
+
+const HEALTH_POLL_MS = 15_000;
 
 export default function DashboardPage() {
+  const [hasSeenHealthyCycle, setHasSeenHealthyCycle] = useState(false);
+  const [warmupStartedAt] = useState(() => Date.now());
+
+  const wakeUpQuery = useQuery({
+    queryKey: ["health", "wake-up"],
+    queryFn: () => healthApi.wakeUp(),
+    retry: false,
+    staleTime: 5 * 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
   const healthChecks = [
-    { name: "Auth Service", query: useQuery({ queryKey: ["health", "auth"], queryFn: () => healthApi.auth(), refetchInterval: 15000, retry: 5, retryDelay: 2000 }) },
-    { name: "Billing Service", query: useQuery({ queryKey: ["health", "billing"], queryFn: () => healthApi.billing(), refetchInterval: 15000, retry: 5, retryDelay: 2000 }) },
-    { name: "User Service", query: useQuery({ queryKey: ["health", "users"], queryFn: () => healthApi.users(), refetchInterval: 15000, retry: 5, retryDelay: 2000 }) },
-    { name: "LLM Service", query: useQuery({ queryKey: ["health", "llm"], queryFn: () => healthApi.llm(), refetchInterval: 15000, retry: 5, retryDelay: 2000 }) },
-    { name: "API v2 (Core)", query: useQuery({ queryKey: ["health", "v2"], queryFn: () => healthApi.v2(), refetchInterval: 15000, retry: 5, retryDelay: 2000 }) },
+    { name: "Auth Service", query: useQuery({ queryKey: ["health", "auth"], queryFn: () => healthApi.auth(), refetchInterval: HEALTH_POLL_MS, retry: 5, retryDelay: 2000 }) },
+    { name: "Billing Service", query: useQuery({ queryKey: ["health", "billing"], queryFn: () => healthApi.billing(), refetchInterval: HEALTH_POLL_MS, retry: 5, retryDelay: 2000 }) },
+    { name: "User Service", query: useQuery({ queryKey: ["health", "users"], queryFn: () => healthApi.users(), refetchInterval: HEALTH_POLL_MS, retry: 5, retryDelay: 2000 }) },
+    { name: "LLM Service", query: useQuery({ queryKey: ["health", "llm"], queryFn: () => healthApi.llm(), refetchInterval: HEALTH_POLL_MS, retry: 5, retryDelay: 2000 }) },
+    { name: "API v2 (Core)", query: useQuery({ queryKey: ["health", "v2"], queryFn: () => healthApi.v2(), refetchInterval: HEALTH_POLL_MS, retry: 5, retryDelay: 2000 }) },
   ];
 
+  const successfulChecks = healthChecks.filter(
+    (s) => s.query.isSuccess && s.query.data?.data?.status === "ok"
+  ).length;
+
+  useEffect(() => {
+    if (successfulChecks > 0) {
+      setHasSeenHealthyCycle(true);
+    }
+  }, [successfulChecks]);
+
   const anyFetching = healthChecks.some(s => s.query.isFetching);
+  const anyLoading = healthChecks.some(s => s.query.isLoading);
   const allUp = healthChecks.every(s => s.query.isSuccess && s.query.data?.data?.status === "ok");
-  const anyDown = healthChecks.some(s => s.query.isError && !s.query.isFetching);
-  const isWakingUp = anyFetching && !allUp && !anyDown;
+  const isWakingUp =
+    !hasSeenHealthyCycle &&
+    successfulChecks === 0 &&
+    (anyFetching || anyLoading || wakeUpQuery.isFetching);
+  const anyDown = !isWakingUp && healthChecks.some(s => s.query.isError && !s.query.isFetching);
+  const isDegraded = !isWakingUp && !allUp && !anyDown;
+  const warmupSeconds = Math.max(1, Math.round((Date.now() - warmupStartedAt) / 1000));
 
   return (
     <Layout>
@@ -32,12 +63,57 @@ export default function DashboardPage() {
           </p>
         </div>
 
+        <div
+          className="rounded-2xl border border-border/80 p-5"
+          style={{
+            background:
+              "linear-gradient(130deg, rgba(17,17,24,0.98), rgba(13,15,24,0.94) 60%, rgba(99,102,241,0.1))",
+          }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-mono uppercase tracking-[0.24em] text-accent">Engine pulse</p>
+              <h2 className="mt-1 font-display text-xl font-bold text-fg">
+                {isWakingUp
+                  ? "Spinning Up Services"
+                  : allUp
+                  ? "All Systems Operational"
+                  : isDegraded
+                  ? "Degraded Performance"
+                  : "Incident Detected"}
+              </h2>
+              <p className="mt-1 text-xs text-fg-muted">
+                {isWakingUp
+                  ? `Cold-start recovery in progress (${warmupSeconds}s). Visitors are seeing live boot telemetry instead of static placeholders.`
+                  : allUp
+                  ? "Every core module is returning healthy responses on schedule."
+                  : isDegraded
+                  ? "Some modules are delayed but still responding."
+                  : "One or more modules stopped responding and require attention."}
+              </p>
+            </div>
+            <div className="rounded-full border border-border bg-bg/70 px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.24em] text-fg-muted">
+              Refresh {Math.round(HEALTH_POLL_MS / 1000)}s
+            </div>
+          </div>
+        </div>
+
         {isWakingUp && (
-          <div className="rounded-xl border border-warning/30 bg-warning/5 p-4 flex items-center gap-4 animate-pulse">
+          <div className="rounded-xl border border-warning/30 p-4 flex items-center gap-4" style={{ background: "rgba(245,158,11,0.08)" }}>
             <div className="w-5 h-5 border-2 border-warning border-t-transparent rounded-full animate-spin" />
             <div>
-              <p className="text-sm font-medium text-warning">Connecting to Engine...</p>
-              <p className="text-[10px] text-warning/70">Services are spinning up after inactivity. This cold start is normal on free-tier hosting.</p>
+              <p className="text-sm font-medium text-warning">Connecting to engine nodes...</p>
+              <p className="text-[10px] text-warning/70">Free-tier infrastructure sleeps after idle time. We trigger wake-up on visit to protect conversion flow and keep the experience premium.</p>
+            </div>
+          </div>
+        )}
+
+        {isDegraded && (
+          <div className="rounded-xl border border-warning/30 bg-warning/5 p-4 flex items-center gap-4">
+            <div className="w-5 h-5 rounded-full bg-warning/20 flex items-center justify-center text-warning font-bold text-xs">~</div>
+            <div>
+              <p className="text-sm font-medium text-warning">Partial service availability</p>
+              <p className="text-[10px] text-warning/70">Some checks are healthy while others are recovering. Data remains live and updates each cycle.</p>
             </div>
           </div>
         )}
@@ -57,6 +133,7 @@ export default function DashboardPage() {
             const isUp = service.query.isSuccess;
             const isError = service.query.isError;
             const data = service.query.data?.data;
+            const isServiceWarming = isWakingUp && !isUp;
 
             return (
               <div 
@@ -68,13 +145,13 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2">
                     <span className={clsx(
                       "w-2 h-2 rounded-full animate-pulse",
-                      isUp ? "bg-success" : isError ? "bg-danger" : "bg-warning"
+                      isUp ? "bg-success" : isServiceWarming ? "bg-warning" : isError ? "bg-danger" : "bg-warning"
                     )} />
                     <span className={clsx(
                       "text-xs font-medium uppercase tracking-wider",
-                      isUp ? "text-success" : isError ? "text-danger" : "text-warning"
+                      isUp ? "text-success" : isServiceWarming ? "text-warning" : isError ? "text-danger" : "text-warning"
                     )}>
-                      {isUp ? "Operational" : isError ? "Offline" : "Checking…"}
+                      {isUp ? "Operational" : isServiceWarming ? "Spinning Up" : isError ? "Offline" : "Checking…"}
                     </span>
                   </div>
                 </div>
@@ -100,7 +177,9 @@ export default function DashboardPage() {
                   {isError && (
                     <div className="mt-3 p-2 rounded bg-danger/5 border border-danger/10">
                       <p className="text-[10px] text-danger font-mono italic">
-                        {extractApiError(service.query.error).message}
+                        {isWakingUp
+                          ? "Waiting for module boot handshake."
+                          : extractApiError(service.query.error).message}
                       </p>
                     </div>
                   )}

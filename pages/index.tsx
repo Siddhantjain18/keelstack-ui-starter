@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Head from "next/head";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import { KeelStackLogoMark } from "../components/KeelStackBrand";
 import { useAuth } from "../lib/auth-context";
@@ -47,6 +48,17 @@ type LiveHealthSummary = {
 
 export default function OverviewPage() {
   const { isAuthenticated, isLoading, user } = useAuth();
+  const [hasSeenLiveSuccess, setHasSeenLiveSuccess] = useState(false);
+  const [warmupStartedAt] = useState(() => Date.now());
+
+  useQuery({
+    queryKey: ["health", "wake-up"],
+    queryFn: () => healthApi.wakeUp(),
+    retry: false,
+    staleTime: 5 * 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+  });
 
   const { data: sub } = useQuery({
     queryKey: ["billing", "current"],
@@ -55,7 +67,11 @@ export default function OverviewPage() {
     retry: false,
   });
 
-  const { data: healthData } = useQuery<LiveHealthSummary>({
+  const {
+    data: healthData,
+    isLoading: isHealthLoading,
+    isFetching: isHealthFetching,
+  } = useQuery<LiveHealthSummary>({
     queryKey: ["health-summary"],
     queryFn: async () => {
       const cycleStartedAt = performance.now();
@@ -106,6 +122,12 @@ export default function OverviewPage() {
     retryDelay: 2000,
   });
 
+  useEffect(() => {
+    if ((healthData?.successRate ?? 0) > 0) {
+      setHasSeenLiveSuccess(true);
+    }
+  }, [healthData?.successRate]);
+
   if (isLoading) return null;
 
   const plan = isAuthenticated ? sub?.subscription?.plan ?? "free" : "premium";
@@ -119,8 +141,19 @@ export default function OverviewPage() {
   const liveLatency = healthData?.avgLatencyMs ?? 0;
   const liveSpeed = healthData?.checksPerMinute ?? 0;
   const liveSuccessRate = healthData?.successRate ?? 0;
-  const liveFreshness = healthData ? `updated ${timeAgo(healthData.refreshedAt)}` : "warming up";
-  const liveCoverage = `${modules.filter(({ ok }) => ok).length}/${modules.length} live`;
+  const successfulModules = modules.filter(({ ok }) => ok).length;
+  const isColdBoot =
+    !hasSeenLiveSuccess &&
+    successfulModules === 0 &&
+    (isHealthLoading || isHealthFetching || !healthData);
+  const warmupSeconds = Math.max(1, Math.round((Date.now() - warmupStartedAt) / 1000));
+
+  const liveFreshness = isColdBoot
+    ? `waking engine for ${warmupSeconds}s`
+    : healthData
+    ? `updated ${timeAgo(healthData.refreshedAt)}`
+    : "warming up";
+  const liveCoverage = isColdBoot ? "Waking engine" : `${successfulModules}/${modules.length} live`;
 
   return (
     <Layout>
@@ -176,29 +209,59 @@ export default function OverviewPage() {
             </div>
           </div>
 
+          {isColdBoot && (
+            <div
+              className="mb-4 rounded-xl border border-warning/30 p-4"
+              style={{ background: "linear-gradient(120deg, rgba(245,158,11,0.1), rgba(17,17,24,0.7))" }}
+            >
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 rounded-full border-2 border-warning border-t-transparent animate-spin" />
+                <div>
+                  <p className="text-sm font-semibold text-warning">Warming the live engine now</p>
+                  <p className="mt-1 text-xs leading-relaxed text-fg-muted">
+                    Free-tier hosts pause after idle time. We wake the backend as soon as a visitor lands so they still see real data,
+                    not placeholders. Usually ready within a few seconds.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <LiveMetricCard
               label="Latency"
-              value={`${liveLatency.toLocaleString()} ms`}
-              sub={`avg round-trip across ${modules.length} modules`}
+              value={isColdBoot ? "Spinning up" : `${liveLatency.toLocaleString()} ms`}
+              sub={
+                isColdBoot
+                  ? "cold-start handshake in progress"
+                  : `avg round-trip across ${modules.length} modules`
+              }
               tone="text-accent"
             />
             <LiveMetricCard
               label="Speed"
-              value={`${liveSpeed.toLocaleString()} checks/min`}
-              sub={`live probes refreshed ${Math.round(LIVE_HEALTH_POLL_MS / 1000)}s apart`}
+              value={isColdBoot ? "Priming" : `${liveSpeed.toLocaleString()} checks/min`}
+              sub={
+                isColdBoot
+                  ? "probing modules while services boot"
+                  : `live probes refreshed ${Math.round(LIVE_HEALTH_POLL_MS / 1000)}s apart`
+              }
               tone="text-info"
             />
             <LiveMetricCard
               label="Data"
               value={liveCoverage}
-              sub={`${liveSuccessRate}% success rate · ${liveFreshness}`}
+              sub={isColdBoot ? `cold start active · ${liveFreshness}` : `${liveSuccessRate}% success rate · ${liveFreshness}`}
               tone="text-success"
             />
             <LiveMetricCard
               label="Cycle"
-              value={`${healthData?.cycleMs?.toLocaleString() ?? "—"} ms`}
-              sub={`fastest ${healthData?.fastestLatencyMs?.toLocaleString() ?? "—"} ms · slowest ${healthData?.slowestLatencyMs?.toLocaleString() ?? "—"} ms`}
+              value={isColdBoot ? "Boot cycle" : `${healthData?.cycleMs?.toLocaleString() ?? "—"} ms`}
+              sub={
+                isColdBoot
+                  ? `attempting wake-up for ${warmupSeconds}s`
+                  : `fastest ${healthData?.fastestLatencyMs?.toLocaleString() ?? "—"} ms · slowest ${healthData?.slowestLatencyMs?.toLocaleString() ?? "—"} ms`
+              }
               tone="text-warning"
             />
           </div>
@@ -213,24 +276,40 @@ export default function OverviewPage() {
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-fg-muted">{name}</p>
-                    <p className={`mt-1 text-sm font-semibold ${ok ? "text-success" : "text-danger"}`}>
-                      {ok ? "Live" : "Offline"}
+                    <p
+                      className={`mt-1 text-sm font-semibold ${
+                        ok ? "text-success" : isColdBoot ? "text-warning" : "text-danger"
+                      }`}
+                    >
+                      {ok ? "Live" : isColdBoot ? "Spinning up" : "Offline"}
                     </p>
                   </div>
                   <span
                     className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                      ok === undefined ? "bg-muted animate-pulse2" : ok ? "bg-success" : "bg-danger"
+                      ok === undefined
+                        ? "bg-muted animate-pulse2"
+                        : ok
+                        ? "bg-success"
+                        : isColdBoot
+                        ? "bg-warning animate-pulse2"
+                        : "bg-danger"
                     }`}
                   />
                 </div>
                 <div className="mt-3 h-1.5 rounded-full bg-border overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${ok ? "bg-accent" : "bg-danger"}`}
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      ok ? "bg-accent" : isColdBoot ? "bg-warning" : "bg-danger"
+                    }`}
                     style={{ width: `${Math.min(100, Math.max(12, 100 - (ms ?? 0) / 4))}%` }}
                   />
                 </div>
                 <p className="mt-2 text-[10px] font-mono text-fg-muted">
-                  {ms ? `${ms.toLocaleString()} ms response` : "Waiting for live probe"}
+                  {ms
+                    ? `${ms.toLocaleString()} ms response`
+                    : isColdBoot
+                    ? "Boot sequence running (free-tier cold start)"
+                    : "Waiting for live probe"}
                 </p>
               </div>
             ))}
